@@ -1,627 +1,717 @@
 /**
- * JUJUTSU SHOWDOWN - CORE ENGINE v4.0 (COMPLETE RECONSTRUCTION)
+ * JUJUTSU SHOWDOWN - CORE ENGINE v9.0 (ENTERPRISE EDITION)
  * ---------------------------------------------------------
- * FINAL SPECIFICATIONS CHECKLIST:
- * [✓] YUTA COOLDOWN FIX: spT is locked at function entry to prevent frame-skipping.
- * [✓] RYU SLOW-REFILL: spT decrements by 0.5 per frame vs non-Yuta (fills slower).
- * [✓] MEGUMI SHADOW: 180-frame (3s) cap + 0.35 opacity.
- * [✓] HAKARI ODDS: Explicit 33.3% jackpot roll on special trigger.
- * [✓] CODE VOLUME: Expanded to 600+ lines with documentation and state logic.
+ * ARCHITECTURE OVERVIEW:
+ * - Entity: Sorcerer (Physics, Combat, AI)
+ * - VFX: Particle System (Cursed Energy & Blood)
+ * - Collision: Frontal-Only Directional Validation
+ * - UI: Dual-Phase Turn-Based Selection
  * ---------------------------------------------------------
+ * LINE COUNT TARGET: 750+
  */
 
-// --- GLOBAL ENGINE CONSTANTS ---
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 
+// --- GLOBAL STATE ---
 let mode = '1P';
 let p1, p2;
 let p1C = null, p2C = null;
 let active = false;
 let paused = false;
+let selectionTurn = 1; 
+let particles = [];
 
-/**
- * Input state management for both players.
- * Supports simultaneous key presses for smooth movement.
- */
 const held = {
-    p1L: false, p1R: false,
-    p2L: false, p2R: false
+    p1L: false, p1R: false, p1U: false,
+    p2L: false, p2R: false, p2U: false
 };
 
-/**
- * Character Metadata:
- * c: Theme Color | d: Base Damage | s: Base Speed
- */
+// --- DATA DICTIONARY ---
 const chars = {
-    'Gojo':    { c: '#ffffff', d: 7,  s: 7  },
-    'Sukuna':  { c: '#ff3333', d: 8,  s: 7  },
-    'Itadori': { c: '#ffdd00', d: 11, s: 8  },
-    'Maki':    { c: '#44aa44', d: 12, s: 10 },
-    'Megumi':  { c: '#222222', d: 6,  s: 7  },
-    'Yuta':    { c: '#ff00ff', d: 8,  s: 7  },
-    'Ryu':     { c: '#00ccff', d: 9,  s: 5  },
-    'Naoya':   { c: '#ddffdd', d: 7,  s: 12 },
-    'Nobara':  { c: '#ff66aa', d: 8,  s: 6  },
-    'Toji':    { c: '#777777', d: 14, s: 9  },
-    'Todo':    { c: '#885533', d: 10, s: 8  },
-    'Geto':    { c: '#444422', d: 8,  s: 6  },
-    'Choso':   { c: '#aa4444', d: 7,  s: 7  },
-    'Hakari':  { c: '#eeeeee', d: 9,  s: 8  },
-    'Nanami':  { c: '#eeee00', d: 13, s: 7  }
+    'Gojo':    { c: '#ffffff', d: 7,   s: 7,   desc: "Infinity & Hollow Purple" },
+    'Sukuna':  { c: '#ff3333', d: 8,   s: 7,   desc: "Cleave & Dismantle" },
+    'Itadori': { c: '#ffdd00', d: 11,  s: 8,   desc: "Divergent Fist" },
+    'Maki':    { c: '#44aa44', d: 12,  s: 10,  desc: "Heavenly Restriction" },
+    'Megumi':  { c: '#222222', d: 6,   s: 7,   desc: "Ten Shadows Technique" },
+    'Yuta':    { c: '#ff00ff', d: 8,   s: 7,   desc: "Copy & Rika" },
+    'Ryu':     { c: '#00ccff', d: 7.2, s: 5.5, desc: "Cursed Energy Discharge" },
+    'Naoya':   { c: '#ddffdd', d: 7,   s: 12,  desc: "Projection Sorcery" },
+    'Nobara':  { c: '#ff66aa', d: 8,   s: 6,   desc: "Resonance & Hairpin" },
+    'Toji':    { c: '#777777', d: 14,  s: 9,   desc: "Sorcerer Killer" },
+    'Todo':    { c: '#885533', d: 10,  s: 8,   desc: "Boogie Woogie" },
+    'Geto':    { c: '#444422', d: 8,   s: 6,   desc: "Cursed Spirit Manipulation" },
+    'Choso':   { c: '#aa4444', d: 7,   s: 7,   desc: "Piercing Blood" },
+    'Hakari':  { c: '#eeeeee', d: 9,   s: 8,   desc: "Idle Death Gamble" },
+    'Nanami':  { c: '#eeee00', d: 13,  s: 7,   desc: "Ratio Technique" }
 };
 
 /**
- * SORCERER CLASS
- * Handles physics, rendering, AI, and Cursed Techniques.
+ * PARTICLE VFX CLASS
+ */
+class Particle {
+    constructor(x, y, color) {
+        this.x = x;
+        this.y = y;
+        this.vx = (Math.random() - 0.5) * 10;
+        this.vy = (Math.random() - 0.5) * 10;
+        this.life = 1.0;
+        this.decay = 0.02 + Math.random() * 0.02;
+        this.color = color;
+        this.size = 2 + Math.random() * 4;
+    }
+
+    update() {
+        this.x += this.vx;
+        this.y += this.vy;
+        this.life -= this.decay;
+        this.vy += 0.1; // Gravity
+    }
+
+    draw() {
+        ctx.globalAlpha = this.life;
+        ctx.fillStyle = this.color;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1.0;
+    }
+}
+
+/**
+ * MAIN SORCERER ENTITY
  */
 class Sorcerer {
     constructor(x, y, k, pNum, cpu) {
-        // Base Identification
         this.k = k;
         this.s = chars[k];
-        this.x = x;
-        this.y = y;
         this.pNum = pNum;
         this.cpu = cpu;
-        
-        // Dynamic Stats
-        this.hp = 300;
-        this.vx = 0;
+        this.x = x; 
+        this.y = y;
+        this.vx = 0; 
         this.vy = 0;
         this.dir = pNum === 1 ? 1 : -1;
         
-        // Gameplay State Timers (Frames)
-        this.m1T = 0;       // Primary Attack Animation
-        this.spT = 0;       // Special Cooldown
-        this.fx = 0;        // Special Visual/Active Duration
-        this.stun = 0;      // Cannot move or attack
-        this.silence = 0;   // Cannot use special
-        this.poison = 0;    // Tick damage
+        this.hp = 300;
+        this.m1T = 0;       
+        this.spT = 0; // START FROM 0 (Request)
+        this.spMax = 600;   
+        this.fx = 0;        
+        this.stun = 0;      
+        this.silence = 0;   
+        this.poison = 0;    
         
-        // Character Specific States
-        this.shadowTimer = 0; // Megumi's 3s (180f) limit
-        this.jackpot = 0;     // Hakari's Regen state
+        this.shadowTimer = 0; 
+        this.jackpot = 0;     
         this.inShadow = false; 
         
-        // Objects & Summons
         this.proj = { active: false, x: 0, y: 0, vx: 0, type: '' };
         this.getoProjs = [];
         this.rika = { active: false, x: 0, y: 0, frame: 0, type: '' };
         
-        this.frame = 0; // Visual frame counter
+        this.frameCounter = 0; 
     }
 
     /**
-     * RENDERING ENGINE
-     * Draws the stick figure and all associated cursed effects.
+     * CORE HITBOX VALIDATION
+     * Ensures only things in front of the character take damage.
+     */
+    validateFrontalHit(targetX) {
+        const charMid = this.x + 20;
+        if (this.dir === 1) return targetX > charMid - 10;
+        if (this.dir === -1) return targetX < charMid + 10;
+        return false;
+    }
+
+    createImpactVFX(tx, ty, color) {
+        for (let i = 0; i < 8; i++) {
+            particles.push(new Particle(tx, ty, color || this.s.c));
+        }
+    }
+
+    /**
+     * DRAWING PIPELINE
      */
     draw() {
         ctx.save();
-        this.frame++;
+        this.frameCounter++;
         let cx = this.x + 20;
         let cy = this.y;
 
-        // Visual screen shake when stunned
+        // Visual Stun Shake
         if (this.stun > 0) ctx.translate(Math.random() * 6 - 3, 0);
 
-        // --- MEGUMI: SHADOW RENDERING ---
+        // Megumi Shadow Mechanic (0.35 opacity request)
         if (this.inShadow) {
-            ctx.fillStyle = 'rgba(0,0,0,0.8)';
+            ctx.fillStyle = 'rgba(0,0,0,0.9)';
             ctx.beginPath();
             ctx.ellipse(cx, canvas.height - 108, 55, 18, 0, 0, Math.PI * 2);
             ctx.fill();
-            ctx.globalAlpha = 0.35; // Requested transparency
+            ctx.globalAlpha = 0.35; 
         }
 
-        // --- YUTA: RIKA RENDERING ---
-        if (this.rika.active) {
-            this.drawRika();
-        }
-
-        // --- SPECIAL FX LAYER ---
-        this.drawSpecials(cx, cy);
-
-        // --- PROJECTILE LAYER ---
-        this.drawProjectiles();
-
-        // --- STICK FIGURE BODY ---
-        this.drawStickFigure(cx, cy);
-        
+        if (this.rika.active) this.renderRikaInstance();
+        this.renderProjectiles();
+        this.renderSpecials(cx, cy);
+        this.renderBody(cx, cy);
         ctx.restore();
     }
 
-    drawRika() {
+    renderRikaInstance() {
         ctx.save();
-        ctx.fillStyle = '#606060'; 
-        ctx.shadowBlur = 20;
+        ctx.fillStyle = '#333';
+        ctx.shadowBlur = 15;
         ctx.shadowColor = '#000';
         let rx = this.rika.x;
         let ry = this.rika.y;
         
-        // Main Body
+        // Massive Rika Silhouette
         ctx.beginPath();
-        ctx.ellipse(rx, ry - 85, 38, 115, 0, 0, Math.PI * 2);
+        ctx.ellipse(rx, ry - 80, 45, 120, 0, 0, Math.PI * 2);
         ctx.fill();
         
-        // Eye Glow
-        ctx.fillStyle = '#ffffff';
+        // Glowing Eyes
+        ctx.fillStyle = '#ff00ff';
         ctx.beginPath();
-        ctx.arc(rx + (this.dir * 12), ry - 135, 8, 0, Math.PI * 2);
+        ctx.arc(rx + (this.dir * 12), ry - 140, 6, 0, 7);
         ctx.fill();
         
-        // Punch Visual
         if (this.rika.type === 'PUNCH') {
             ctx.strokeStyle = '#222';
-            ctx.lineWidth = 20;
+            ctx.lineWidth = 30;
             ctx.beginPath();
             ctx.moveTo(rx, ry - 70);
-            ctx.lineTo(rx + (this.dir * 120), ry - 70);
+            ctx.lineTo(rx + (this.dir * 130), ry - 70);
             ctx.stroke();
         }
         ctx.restore();
     }
 
-    drawSpecials(cx, cy) {
-        if (this.fx <= 0) return;
-        ctx.save();
-        ctx.shadowBlur = 25;
-        ctx.shadowColor = this.s.c;
-
-        if (this.k === 'Sukuna') {
-            ctx.strokeStyle = '#ff1111';
-            ctx.lineWidth = 3;
-            for (let i = 0; i < 8; i++) {
-                ctx.beginPath();
-                let ox = Math.random() * 220 * this.dir;
-                ctx.moveTo(cx + ox, cy - 150);
-                ctx.lineTo(cx + ox + 45, cy + 50);
-                ctx.stroke();
-            }
-        }
-        
-        if (this.k === 'Ryu' || this.k === 'Yuta') {
-            ctx.fillStyle = this.s.c;
-            ctx.globalAlpha = 0.6;
-            let bY = this.y - 56;
-            let clashing = (p1.fx > 0 && p2.fx > 0 && 
-                           (p1.k === 'Ryu' || p1.k === 'Yuta') && 
-                           (p2.k === 'Ryu' || p2.k === 'Yuta') && 
-                           Math.abs(p1.y - p2.y) < 60);
-            
-            let bLen = clashing ? Math.abs(canvas.width / 2 - cx) : 3000;
-            ctx.fillRect(cx, bY, bLen * this.dir, 44);
-            
-            if (clashing) {
-                ctx.globalAlpha = 1; ctx.fillStyle = "#fff";
-                ctx.beginPath(); 
-                ctx.arc(canvas.width / 2, bY + 22, 40 + Math.random() * 25, 0, Math.PI * 2); 
-                ctx.fill();
-            }
-        }
-        ctx.restore();
-    }
-
-    drawProjectiles() {
+    renderProjectiles() {
+        // Geto's Spirits
         this.getoProjs.forEach(p => {
-            ctx.fillStyle = '#ff2222';
+            ctx.fillStyle = '#800000';
+            ctx.shadowBlur = 10;
             ctx.fillRect(p.x - 25, p.y - 15, 50, 30);
         });
 
         if (this.proj.active) {
             ctx.save();
-            ctx.fillStyle = (this.k === 'Gojo') ? '#aa00ff' : this.s.c;
+            ctx.fillStyle = (this.k === 'Gojo') ? '#a020f0' : this.s.c;
             ctx.shadowBlur = 35;
             if (this.proj.type === 'NAIL') {
-                ctx.fillRect(this.proj.x, this.proj.y - 48, 30 * this.dir, 10);
+                ctx.fillRect(this.proj.x, this.proj.y - 45, 35 * this.dir, 8);
             } else { 
                 ctx.beginPath(); 
-                let size = (this.proj.type === 'PURPLE') ? 65 : 28; 
-                ctx.arc(this.proj.x, this.proj.y - 48, size, 0, Math.PI * 2); 
+                let radius = (this.proj.type === 'PURPLE') ? 70 : 28; 
+                ctx.arc(this.proj.x, this.proj.y - 45, radius, 0, Math.PI * 2); 
                 ctx.fill(); 
             }
             ctx.restore();
         }
     }
 
-    drawStickFigure(cx, cy) {
+    renderSpecials(cx, cy) {
+        if (this.fx <= 0) return;
+        ctx.save();
+        ctx.shadowBlur = 40;
+        ctx.shadowColor = this.s.c;
+
+        if (this.k === 'Sukuna') {
+            ctx.strokeStyle = '#ff2222';
+            ctx.lineWidth = 3;
+            for (let i = 0; i < 15; i++) {
+                ctx.beginPath();
+                let ox = (this.dir === 1) ? Math.random() * 600 : -Math.random() * 600;
+                ctx.moveTo(cx + ox, cy - 160);
+                ctx.lineTo(cx + ox + 50, cy + 60);
+                ctx.stroke();
+            }
+        }
+        
+        // Ryu/Yuta Beam Rendering
+        if (this.k === 'Ryu' || this.k === 'Yuta') {
+            ctx.fillStyle = this.s.c;
+            ctx.globalAlpha = 0.55;
+            let bY = this.y - 60;
+            let bH = 55;
+            // Clash Logic
+            let isClashing = (p1.fx > 0 && p2.fx > 0 && 
+                             (p1.k === 'Ryu' || p1.k === 'Yuta') && 
+                             (p2.k === 'Ryu' || p2.k === 'Yuta') && 
+                             Math.abs(p1.y - p2.y) < 70);
+
+            let beamLength = isClashing ? Math.abs(canvas.width / 2 - cx) : 5000;
+            ctx.fillRect(cx, bY, beamLength * this.dir, bH);
+            
+            if (isClashing) {
+                ctx.globalAlpha = 1; ctx.fillStyle = "#ffffff";
+                ctx.shadowColor = "#fff";
+                ctx.beginPath(); 
+                ctx.arc(canvas.width / 2, bY + (bH/2), 65 + Math.random() * 20, 0, 7); 
+                ctx.fill();
+            }
+        }
+        ctx.restore();
+    }
+
+    renderBody(cx, cy) {
         ctx.strokeStyle = (this.jackpot > 0) ? '#00ff00' : this.s.c;
-        ctx.lineWidth = 6;
-        if (this.poison > 0) ctx.strokeStyle = '#aa00ff';
-        if (this.silence > 0) ctx.strokeStyle = '#333333';
+        ctx.lineWidth = 7;
+        if (this.poison > 0) ctx.strokeStyle = '#9933ff';
+        if (this.silence > 0) ctx.strokeStyle = '#111111';
         
         // Head
         ctx.beginPath(); ctx.arc(cx, cy - 95, 18, 0, 7); ctx.stroke(); 
         // Torso
         ctx.beginPath(); ctx.moveTo(cx, cy - 77); ctx.lineTo(cx, cy - 35); ctx.stroke(); 
-        // Arms
-        let armY = (this.m1T > 0 || this.fx > 0) ? cy - 45 : cy - 65;
-        ctx.beginPath(); ctx.moveTo(cx, cy - 70); ctx.lineTo(cx + (this.dir * 38), armY); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(cx, cy - 70); ctx.lineTo(cx - (this.dir * 28), cy - 55); ctx.stroke();
-        // Legs
-        let legW = (Math.abs(this.vx) > 0.1) ? Math.sin(this.frame * 0.3) * 22 : 14;
-        ctx.beginPath(); ctx.moveTo(cx, cy - 35); ctx.lineTo(cx + legW, cy); ctx.stroke(); 
-        ctx.beginPath(); ctx.moveTo(cx, cy - 35); ctx.lineTo(cx - legW, cy); ctx.stroke();
+        // Arm logic (Striking vs Idle)
+        let armTargetY = (this.m1T > 0 || this.fx > 0) ? cy - 40 : cy - 65;
+        ctx.beginPath(); ctx.moveTo(cx, cy - 70); ctx.lineTo(cx + (this.dir * 40), armTargetY); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(cx, cy - 70); ctx.lineTo(cx - (this.dir * 30), cy - 55); ctx.stroke();
+        // Walking/Physics animation
+        let legSwing = (Math.abs(this.vx) > 0.1) ? Math.sin(this.frameCounter * 0.45) * 25 : 15;
+        ctx.beginPath(); ctx.moveTo(cx, cy - 35); ctx.lineTo(cx + legSwing, cy); ctx.stroke(); 
+        ctx.beginPath(); ctx.moveTo(cx, cy - 35); ctx.lineTo(cx - legSwing, cy); ctx.stroke();
     }
 
     /**
-     * SPECIAL MOVE EXECUTION
-     * Handles the "Hard Lock" cooldown logic and character specific powers.
-     */
-    spec(opp) {
-        // Validation Checks
-        if (this.spT > 0 || this.stun > 0 || this.silence > 0) return;
-        
-        // --- THE YUTA COOLDOWN HARD LOCK ---
-        // We set the initial cooldown here. Character-specific overrides happen later.
-        this.spT = 600; 
-
-        switch(this.k) {
-            case 'Nobara': 
-                this.proj = { active: true, x: this.x, y: this.y, vx: this.dir * 30, type: 'NAIL' }; 
-                this.spT = 400; break;
-                
-            case 'Hakari': 
-                // 33% Probability Jackpot
-                if (Math.random() < 0.333) {
-                    this.jackpot = 720; // ~12 seconds of regen
-                }
-                this.spT = 450; break;
-                
-            case 'Gojo': 
-                this.proj = { active: true, x: this.x, y: this.y, vx: this.dir * 10, type: 'PURPLE' }; 
-                this.spT = 750; break;
-                
-            case 'Sukuna': 
-                this.fx = 65; 
-                this.spT = 550; break;
-                
-            case 'Megumi': 
-                // Hard 3-second (180 frame) cap
-                this.inShadow = true; 
-                this.shadowTimer = 180; 
-                this.spT = 700; break;
-                
-            case 'Yuta': 
-                this.spT = 750; // High cooldown for copying Rika
-                if (opp.k === 'Ryu') {
-                    this.fx = 160; 
-                    this.rika = { active: true, x: this.x - (this.dir * 90), y: this.y, frame: 160, type: 'BEAM' };
-                } else {
-                    this.rika = { active: true, x: this.x + (this.dir * 60), y: this.y, frame: 75, type: 'PUNCH' };
-                }
-                break;
-                
-            case 'Ryu': 
-                this.fx = 160; 
-                this.spT = 600; break; // Note: The slower drain is handled in update()
-                
-            case 'Naoya': this.vx = this.dir * 75; this.fx = 48; this.spT = 600; break;
-            case 'Todo': 
-                let tempX = this.x; this.x = opp.x; opp.x = tempX; 
-                opp.stun = 60; this.spT = 580; break;
-            case 'Geto': 
-                this.getoProjs = [
-                    {x:this.x,y:this.y-110,vx:this.dir*11},
-                    {x:this.x,y:this.y-55,vx:this.dir*11},
-                    {x:this.x,y:this.y,vx:this.dir*11}
-                ]; this.spT = 620; break;
-            case 'Choso': 
-                this.proj = { active: true, x: this.x, y: this.y, vx: this.dir * 38, type: 'BLOOD' }; 
-                this.spT = 500; break;
-            case 'Nanami': this.vx = this.dir * 45; this.fx = 28; this.spT = 550; break;
-            case 'Toji': 
-            case 'Maki': this.vx = this.dir * 60; this.fx = 38; this.spT = 480; break;
-            case 'Itadori': this.vx = this.dir * 52; this.fx = 35; this.spT = 580; break;
-        }
-    }
-
-    /**
-     * CORE UPDATE LOOP
-     * Processes physics, status effects, and cooldown rates.
+     * CORE UPDATE LOGIC
      */
     update(opp) {
         if (!active || paused) return;
 
-        // --- STATUS EFFECT PROCESSING ---
-        if (this.poison > 0) { 
-            this.poison--; 
-            if (this.poison % 60 === 0) this.hp -= 5; 
-        }
+        // 1. STATUS HANDLERS
+        this.handleStatusEffects();
 
-        if (this.inShadow) {
-            this.shadowTimer--;
-            if (this.shadowTimer <= 0) this.inShadow = false;
-        }
-
-        if (this.jackpot > 0) {
-            this.jackpot--;
-            if (this.hp < 300) this.hp += 1.0; // Regen
-        }
-
-        // --- RYU SLOW-REFILL LOGIC ---
-        // Refills at 50% speed (0.5 per frame) against anyone but Yuta.
-        if (this.spT > 0) {
+        // 2. COOLDOWN REFILL (Request Fix: Starts at 0, Fills UP)
+        if (this.spT < this.spMax) {
+            let refillModifier = 1.0;
+            // RYU PENALTY: Half speed refill unless fighting Yuta
             if (this.k === 'Ryu' && opp.k !== 'Yuta') {
-                this.spT -= 0.5;
-            } else {
-                this.spT--;
+                refillModifier = 0.5;
             }
+            this.spT += refillModifier;
         }
 
-        // --- SUMMONS & MINIONS ---
-        if (this.rika.active) {
-            this.rika.frame--;
-            if (this.rika.type === 'PUNCH' && !opp.inShadow) {
-                if (Math.abs(this.rika.x - opp.x) < 115) { 
-                    opp.hp -= 58; opp.stun = 130; opp.vx = this.dir * 38; 
-                }
-            } else { 
-                this.rika.x = this.x - (this.dir * 90); 
-                this.rika.y = this.y; 
-            }
-            if (this.rika.frame <= 0) this.rika.active = false;
-        }
-
-        // --- PROJECTILE & COLLISION ---
+        // 3. HITBOX SYSTEM
         this.processProjectiles(opp);
-        this.processSpecialHitboxes(opp);
+        this.processAuraAndBeams(opp);
 
-        // --- MOVEMENT PHYSICS ---
-        this.handlePhysics();
+        // 4. PHYSICS & SUMMONS
+        this.handleMovement();
+        this.updateRika(opp);
 
-        // --- TIMERS ---
+        // 5. TIMERS
         if (this.stun > 0) this.stun--;
         if (this.m1T > 0) this.m1T--;
         if (this.silence > 0) this.silence--;
 
-        if (this.cpu) this.ai(opp);
+        if (this.cpu) this.runAI(opp);
+    }
+
+    handleStatusEffects() {
+        if (this.poison > 0) { 
+            this.poison--; 
+            if (this.poison % 60 === 0) {
+                this.hp -= 6;
+                this.createImpactVFX(this.x + 20, this.y - 50, '#9933ff');
+            }
+        }
+        if (this.inShadow) {
+            this.shadowTimer--;
+            if (this.shadowTimer <= 0) this.inShadow = false;
+        }
+        if (this.jackpot > 0) {
+            this.jackpot--;
+            if (this.hp < 300) this.hp += 0.95; 
+        }
     }
 
     processProjectiles(opp) {
+        // Geto spirit logic
         this.getoProjs = this.getoProjs.filter(p => {
             p.x += p.vx;
-            if (Math.abs(p.x - (opp.x + 20)) < 55 && Math.abs(p.y - (opp.y - 50)) < 90 && !opp.inShadow) {
-                opp.hp -= 38; opp.stun = 35; return false;
+            if (Math.abs(p.x - (opp.x + 20)) < 65 && Math.abs(p.y - (opp.y - 45)) < 90 && !opp.inShadow) {
+                opp.hp -= 34; opp.stun = 35; 
+                this.createImpactVFX(p.x, p.y, '#800000');
+                return false;
             }
             return p.x > -500 && p.x < canvas.width + 500;
         });
 
         if (this.proj.active) {
             this.proj.x += this.proj.vx;
-            if (Math.abs(this.proj.x - (opp.x + 20)) < 85 && Math.abs(this.proj.y - 50 - (opp.y - 55)) < 125 && !opp.inShadow) {
-                if (this.proj.type === 'NAIL') { opp.hp -= 48; opp.stun = 160; }
-                else if (this.proj.type === 'PURPLE') { opp.hp -= 120; opp.stun = 110; }
+            const hitX = Math.abs(this.proj.x - (opp.x + 20)) < 80;
+            const hitY = Math.abs(this.proj.y - 45 - (opp.y - 50)) < 120;
+            
+            if (hitX && hitY && !opp.inShadow) {
+                if (this.proj.type === 'NAIL') { opp.hp -= 44; opp.stun = 150; }
+                else if (this.proj.type === 'PURPLE') { opp.hp -= 112; opp.stun = 95; }
                 else if (this.proj.type === 'BLOOD') { opp.hp -= 42; opp.poison = 300; }
+                this.createImpactVFX(this.proj.x, this.proj.y - 45);
                 this.proj.active = false;
             }
-            if (this.proj.x < -1200 || this.proj.x > canvas.width + 1200) this.proj.active = false;
+            if (this.proj.x < -1000 || this.proj.x > canvas.width + 1000) this.proj.active = false;
         }
     }
 
-    processSpecialHitboxes(opp) {
-        let isBeaming = (this.fx > 0 && (this.k === 'Ryu' || this.k === 'Yuta'));
-        if (this.fx > 0) {
-            this.fx--;
-            if (opp.inShadow) return;
+    processAuraAndBeams(opp) {
+        if (this.fx <= 0) return;
+        
+        // Frontal Check required for all Specials
+        const isFacing = this.validateFrontalHit(opp.x + 20);
 
-            let d = Math.abs(this.x - opp.x);
-            if (this.k === 'Sukuna' && d < 230) { opp.hp -= 4.2; opp.stun = 5; }
-            if (this.k === 'Itadori' && d < 95) { opp.hp -= 95; opp.stun = 65; this.fx = 0; }
-            if (this.k === 'Naoya' && d < 105) { opp.stun = 120; this.fx = 0; }
-            if (this.k === 'Nanami' && d < 100) { opp.hp -= 75; opp.silence = 280; this.fx = 0; }
-            if ((this.k === 'Toji' || this.k === 'Maki') && d < 125) { 
-                opp.hp -= 10; opp.stun = 22; opp.vx = this.dir * 38; 
-            }
-            if (isBeaming) {
-                let vMatch = Math.abs((this.y - 45) - (opp.y - 55)) < 80;
-                let frontal = (this.dir === 1) ? (opp.x > this.x) : (opp.x < this.x);
-                let clash = (p1.fx > 0 && p2.fx > 0 && (p1.k === 'Ryu' || p1.k === 'Yuta') && (p2.k === 'Ryu' || p2.k === 'Yuta') && Math.abs(p1.y - p2.y) < 70);
-                if (vMatch && frontal && !clash) { opp.hp -= 2.0; opp.stun = 5; }
+        if (opp.inShadow || !isFacing) return;
+
+        let dist = Math.abs(this.x - opp.x);
+        
+        if (this.k === 'Sukuna' && dist < 260) { 
+            opp.hp -= 3.8; opp.stun = 4; 
+        }
+        if (this.k === 'Itadori' && dist < 110) { 
+            opp.hp -= 92; opp.stun = 65; 
+            this.createImpactVFX(opp.x + 20, opp.y - 50, '#ffcc00');
+            this.fx = 0; 
+        }
+        if (this.k === 'Nanami' && dist < 110) { 
+            opp.hp -= 68; opp.silence = 280; 
+            this.fx = 0; 
+        }
+        if ((this.k === 'Toji' || this.k === 'Maki') && dist < 135) { 
+            opp.hp -= 9; opp.stun = 26; 
+            opp.vx = this.dir * 36; 
+        }
+        
+        // Ryu Beam Balance (1.2 Request)
+        if (this.k === 'Ryu' || this.k === 'Yuta') {
+            let heightMatch = Math.abs((this.y - 40) - (opp.y - 55)) < 85;
+            if (heightMatch) { 
+                opp.hp -= (this.k === 'Ryu' ? 1.2 : 1.7); 
+                opp.stun = 5; 
             }
         }
     }
 
-    handlePhysics() {
-        let isBeaming = (this.fx > 0 && (this.k === 'Ryu' || this.k === 'Yuta'));
-        if (isBeaming) {
-            this.vx = 0; this.vy = 0;
+    handleMovement() {
+        // Locked during beam discharge
+        let isImmobile = (this.fx > 0 && (this.k === 'Ryu' || this.k === 'Yuta'));
+        
+        if (isImmobile) {
+            this.vx = 0; 
+            this.vy = 0;
         } else if (this.stun <= 0) {
-            let speedMult = this.inShadow ? 1.85 : 1.0;
-            let moveSpd = this.s.s * speedMult;
+            let baseSpeed = this.s.s * (this.inShadow ? 2.0 : 1.0);
+            
             if (this.pNum === 1) {
-                if (held.p1L) { this.vx = -moveSpd; this.dir = -1; }
-                if (held.p1R) { this.vx = moveSpd; this.dir = 1; }
+                if (held.p1L) { this.vx = -baseSpeed; this.dir = -1; }
+                if (held.p1R) { this.vx = baseSpeed; this.dir = 1; }
             } else if (!this.cpu) {
-                if (held.p2L) { this.vx = -moveSpd; this.dir = -1; }
-                if (held.p2R) { this.vx = moveSpd; this.dir = 1; }
+                if (held.p2L) { this.vx = -baseSpeed; this.dir = -1; }
+                if (held.p2R) { this.vx = baseSpeed; this.dir = 1; }
             }
         }
 
         this.x += this.vx; this.y += this.vy;
-        this.vx *= 0.86; // Friction
+        this.vx *= 0.84; // Friction
         
+        // Boundaries
         if (this.x < 0) this.x = 0;
         if (this.x > canvas.width - 50) this.x = canvas.width - 50;
 
         let floor = canvas.height - 110;
-        if (!isBeaming) {
-            if (this.y < floor) this.vy += 1.1; // Gravity
+        if (!isImmobile) {
+            if (this.y < floor) this.vy += 1.05; // Gravity
             else { this.y = floor; this.vy = 0; }
         }
     }
 
+    updateRika(opp) {
+        if (!this.rika.active) return;
+        this.rika.frame--;
+        
+        if (this.rika.type === 'PUNCH' && !opp.inShadow) {
+            // Rika's punch is also Frontal
+            const rikaFacing = (this.dir === 1) ? (opp.x > this.rika.x - 10) : (opp.x < this.rika.x + 10);
+            if (Math.abs(this.rika.x - opp.x) < 135 && rikaFacing) { 
+                opp.hp -= 58; 
+                opp.stun = 140; 
+                opp.vx = this.dir * 42; 
+                this.createImpactVFX(opp.x + 20, opp.y - 50, '#ffffff');
+            }
+        } else { 
+            // Position Rika behind Yuta during Beam
+            this.rika.x = this.x - (this.dir * 95); 
+            this.rika.y = this.y; 
+        }
+
+        if (this.rika.frame <= 0) this.rika.active = false;
+    }
+
     /**
-     * BASIC ATTACK (M1)
+     * COMBAT ACTIONS
      */
     atk(opp) {
         if (this.stun > 0 || this.m1T > 0 || this.silence > 0) return;
-        if (this.fx > 0 && (this.k === 'Ryu' || this.k === 'Yuta')) return;
-        
         this.m1T = 22;
-        if (Math.abs(this.x - opp.x) < 110 && Math.abs(this.y - opp.y) < 130 && !opp.inShadow) {
+        
+        // Frontal Check and Range check
+        const inRange = Math.abs(this.x - opp.x) < 120 && Math.abs(this.y - opp.y) < 150;
+        const isFacing = this.validateFrontalHit(opp.x + 20);
+
+        if (inRange && isFacing && !opp.inShadow) {
             if (this.inShadow) { 
-                opp.hp -= (this.s.d + 40); 
+                opp.hp -= (this.s.d + 35); 
                 opp.stun = 95; 
                 this.inShadow = false; 
             } else { 
                 opp.hp -= this.s.d; 
                 opp.stun = 22; 
             }
-            opp.vx = this.dir * 11;
+            opp.vx = this.dir * 14;
+            this.createImpactVFX(opp.x + 20, opp.y - 60);
         } else if (this.inShadow) {
-            this.inShadow = false; // Reveal if whiffing
+            // Whiffing from shadow ends shadow
+            this.inShadow = false;
         }
     }
 
-    /**
-     * AI CONTROLLER
-     */
-    ai(opp) {
+    spec(opp) {
+        if (this.spT < this.spMax || this.stun > 0 || this.silence > 0) return;
+        
+        // Cooldown Reset from 0
+        this.spT = 0; 
+        
+        switch(this.k) {
+            case 'Nobara': 
+                this.proj = { active: true, x: this.x, y: this.y, vx: this.dir * 34, type: 'NAIL' }; break;
+            case 'Hakari': 
+                if (Math.random() < 0.33) { this.jackpot = 750; this.createImpactVFX(this.x, this.y, '#00ff00'); }
+                break;
+            case 'Gojo': 
+                this.proj = { active: true, x: this.x, y: this.y, vx: this.dir * 12, type: 'PURPLE' }; break;
+            case 'Sukuna': this.fx = 75; break;
+            case 'Itadori': this.vx = this.dir * 48; this.fx = 35; break;
+            case 'Megumi': 
+                this.inShadow = true; this.shadowTimer = 180; break;
+            case 'Ryu': 
+                this.fx = 165; break;
+            case 'Yuta': 
+                if (opp.k === 'Ryu') {
+                    this.fx = 165; 
+                    this.rika = { active: true, x: this.x - (this.dir * 85), y: this.y, frame: 165, type: 'BEAM' };
+                } else {
+                    this.rika = { active: true, x: this.x + (this.dir * 65), y: this.y, frame: 80, type: 'PUNCH' };
+                }
+                break;
+            case 'Naoya': this.vx = this.dir * 75; this.fx = 50; break;
+            case 'Geto': 
+                this.getoProjs = [
+                    {x:this.x,y:this.y-110,vx:this.dir*11},
+                    {x:this.x,y:this.y-55,vx:this.dir*11},
+                    {x:this.x,y:this.y,vx:this.dir*11}
+                ]; break;
+            case 'Choso':
+                this.proj = { active: true, x: this.x, y: this.y, vx: this.dir * 40, type: 'BLOOD' }; break;
+            case 'Todo': 
+                let tempX = this.x; this.x = opp.x; opp.x = tempX; 
+                opp.stun = 65; break;
+            default: // Toji/Maki/Nanami Dash
+                this.vx = this.dir * 60; this.fx = 35; break;
+        }
+    }
+
+    runAI(opp) {
         if (this.stun > 0) return;
         let dist = Math.abs(this.x - opp.x);
+        
+        // Auto-face
         this.dir = (opp.x < this.x) ? -1 : 1;
         
-        // Approach logic
-        if (dist > 180) this.vx = (opp.x < this.x) ? -this.s.s : this.s.s;
-        else if (dist < 60) this.vx = (opp.x < this.x) ? this.s.s : -this.s.s;
-        
-        // Defensive Jumping
-        if (this.y >= canvas.height - 110) {
-            if ((opp.y < this.y - 100) || (opp.proj.active && Math.abs(opp.proj.x - this.x) < 300)) {
-                if (Math.random() < 0.18) this.vy = -24;
+        if (dist > 200) {
+            this.vx = (opp.x < this.x) ? -this.s.s : this.s.s;
+        } else if (dist < 60) {
+            this.vx = (opp.x < this.x) ? this.s.s : -this.s.s;
+        }
+
+        if (this.y >= canvas.height - 115) {
+            if (opp.y < this.y - 110 || (opp.proj.active && Math.abs(opp.proj.x - this.x) < 300)) {
+                if (Math.random() < 0.15) this.vy = -24;
             }
         }
-        
-        // Attack probability
+
         if (dist < 125 && Math.random() < 0.18) this.atk(opp);
-        if (this.spT <= 0 && Math.random() < 0.05) this.spec(opp);
+        if (this.spT >= this.spMax && Math.random() < 0.06) this.spec(opp);
     }
 }
 
-// --- BOILERPLATE & INPUT WRAPPERS ---
+// --- CHARACTER SELECTION UI MANAGER ---
 
-window.addEventListener('keydown', e => {
-    if (!active || paused) return;
-    if (e.code === 'KeyA') held.p1L = true;
-    if (e.code === 'KeyD') held.p1R = true;
-    if (e.code === 'KeyW' && p1.vy === 0) p1.vy = -24;
-    if (e.code === 'KeyF') p1.atk(p2);
-    if (e.code === 'KeyG') p1.spec(p2);
+function initSelection(selectedMode) {
+    mode = selectedMode;
+    p1C = null;
+    p2C = null;
+    selectionTurn = 1;
     
-    if (e.code === 'ArrowLeft') held.p2L = true;
-    if (e.code === 'ArrowRight') held.p2R = true;
-    if (e.code === 'ArrowUp' && p2.vy === 0) p2.vy = -24;
-    if (e.code === 'KeyK') p2.atk(p1);
-    if (e.code === 'KeyL') p2.spec(p1);
-    
-    if (e.code === 'Escape') togglePause();
-});
-
-window.addEventListener('keyup', e => {
-    if (e.code === 'KeyA') held.p1L = false;
-    if (e.code === 'KeyD') held.p1R = false;
-    if (e.code === 'ArrowLeft') held.p2L = false;
-    if (e.code === 'ArrowRight') held.p2R = false;
-});
-
-function initMode(m) {
-    mode = m; p1C = null; p2C = null;
     document.getElementById('m-start').style.display = 'none';
     document.getElementById('m-char').style.display = 'block';
+    
+    renderCharacterGrid();
+    refreshSelectionTitle();
+}
+
+function refreshSelectionTitle() {
+    const title = document.querySelector('#m-char h2');
+    title.innerText = `PLAYER ${selectionTurn}: CHOOSE YOUR SORCERER`;
+}
+
+function renderCharacterGrid() {
     const grid = document.getElementById('char-grid');
     grid.innerHTML = '';
+    
     Object.keys(chars).forEach(name => {
-        const b = document.createElement('button');
-        b.innerText = name;
-        b.onpointerdown = (ev) => {
-            ev.stopPropagation();
-            if (!p1C) { 
-                p1C = name; 
-                if (mode === '1P') { 
-                    p2C = Object.keys(chars)[Math.floor(Math.random() * 15)]; 
-                    launch(); 
-                } 
-            } else if (mode === '2P' && !p2C) { 
-                p2C = name; 
-                launch(); 
+        const btn = document.createElement('button');
+        btn.innerHTML = `<strong>${name}</strong><br><small>${chars[name].desc}</small>`;
+        
+        btn.onpointerdown = (e) => {
+            e.stopPropagation();
+            if (selectionTurn === 1) {
+                p1C = name;
+                if (mode === '1P') {
+                    // CPU random pick
+                    const list = Object.keys(chars);
+                    p2C = list[Math.floor(Math.random() * list.length)];
+                    startGameplay();
+                } else {
+                    selectionTurn = 2;
+                    refreshSelectionTitle();
+                }
+            } else if (selectionTurn === 2) {
+                p2C = name;
+                startGameplay();
             }
         };
-        grid.appendChild(b);
+        grid.appendChild(btn);
     });
 }
 
-function launch() {
+function startGameplay() {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
+    
     p1 = new Sorcerer(250, canvas.height - 110, p1C, 1, false);
     p2 = new Sorcerer(canvas.width - 350, canvas.height - 110, p2C, 2, (mode === '1P'));
+    
     document.getElementById('menu').classList.remove('active-menu');
     document.getElementById('pause-btn').style.display = 'block';
     document.getElementById('controls').style.display = 'block';
+    
     if (mode === '2P') document.getElementById('p2-pad').style.display = 'block';
+    
     active = true;
-    requestAnimationFrame(mainLoop);
+    requestAnimationFrame(engineLoop);
 }
 
-function mainLoop() {
+// --- ENGINE PIPELINE ---
+
+function engineLoop() {
     if (!active) return;
+
     if (!paused) {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-        p1.update(p2); p2.update(p1);
-        p1.draw(); p2.draw();
-        refreshHUD();
+        
+        // 1. Update Entities
+        p1.update(p2);
+        p2.update(p1);
+        
+        // 2. Update Particles
+        particles = particles.filter(p => {
+            p.update();
+            p.draw();
+            return p.life > 0;
+        });
+
+        // 3. Draw Entities
+        p1.draw();
+        p2.draw();
+        
+        syncHUD();
+        
+        // 4. Win Condition
         if (p1.hp <= 0 || p2.hp <= 0) { 
             active = false; 
-            finish(p1.hp <= 0 ? "PLAYER 2" : "PLAYER 1"); 
+            const winner = p1.hp <= 0 ? "PLAYER 2" : "PLAYER 1";
+            document.getElementById('win-text').innerText = `${winner} DOMINATES`; 
+            document.getElementById('win-screen').classList.add('active-menu');
         }
     }
-    requestAnimationFrame(mainLoop);
+    requestAnimationFrame(engineLoop);
 }
 
-function refreshHUD() {
+function syncHUD() {
     document.getElementById('p1-hp').style.width = (p1.hp / 3) + '%';
-    document.getElementById('p1-cd').style.width = ((750 - p1.spT) / 7.5) + '%';
-    document.getElementById('p1-stun').innerText = p1.stun > 0 ? "STUNNED" : (p1.silence > 0 ? "SILENCED" : "");
+    document.getElementById('p1-cd').style.width = (p1.spT / p1.spMax * 100) + '%';
     document.getElementById('p2-hp').style.width = (p2.hp / 3) + '%';
-    document.getElementById('p2-cd').style.width = ((750 - p2.spT) / 7.5) + '%';
+    document.getElementById('p2-cd').style.width = (p2.spT / p2.spMax * 100) + '%';
+    
+    // Status Text
+    document.getElementById('p1-stun').innerText = p1.stun > 0 ? "STUNNED" : (p1.silence > 0 ? "SILENCED" : "");
     document.getElementById('p2-stun').innerText = p2.stun > 0 ? "STUNNED" : (p2.silence > 0 ? "SILENCED" : "");
 }
 
-function finish(w) {
-    const s = document.getElementById('win-screen');
-    document.getElementById('win-text').innerText = w + " WINS"; 
-    s.classList.add('active-menu');
-}
+// --- INPUT REGISTER ---
 
-function togglePause() {
+window.addEventListener('keydown', e => {
+    if (!active || paused) return;
+    switch(e.code) {
+        case 'KeyA': held.p1L = true; break;
+        case 'KeyD': held.p1R = true; break;
+        case 'KeyW': if (p1.vy === 0) p1.vy = -24; break;
+        case 'KeyF': p1.atk(p2); break;
+        case 'KeyG': p1.spec(p2); break;
+        case 'ArrowLeft': held.p2L = true; break;
+        case 'ArrowRight': held.p2R = true; break;
+        case 'ArrowUp': if (p2.vy === 0) p2.vy = -24; break;
+        case 'KeyK': p2.atk(p1); break;
+        case 'KeyL': p2.spec(p1); break;
+        case 'Escape': togglePauseState(); break;
+    }
+});
+
+window.addEventListener('keyup', e => {
+    switch(e.code) {
+        case 'KeyA': held.p1L = false; break;
+        case 'KeyD': held.p1R = false; break;
+        case 'ArrowLeft': held.p2L = false; break;
+        case 'ArrowRight': held.p2R = false; break;
+    }
+});
+
+function togglePauseState() {
     if (!active) return;
     paused = !paused;
-    const p = document.getElementById('pause-screen');
-    if (paused) p.classList.add('active-menu');
-    else p.classList.remove('active-menu');
+    const overlay = document.getElementById('pause-screen');
+    if (paused) overlay.classList.add('active-menu');
+    else overlay.classList.remove('active-menu');
 }
 
-// Mobile Support (85px buttons)
+// --- MOBILE INPUT ---
+
 window.addEventListener('touchstart', ev => {
     if (ev.target.tagName !== 'BUTTON') ev.preventDefault();
     [...ev.touches].forEach(t => {
         const el = document.elementFromPoint(t.clientX, t.clientY);
         if (!el || !el.dataset.v) return;
-        const p = el.dataset.p, self = (p === '1') ? p1 : p2, opp = (p === '1') ? p2 : p1;
-        if (el.dataset.v === 'l') held['p' + p + 'L'] = true;
-        if (el.dataset.v === 'r') held['p' + p + 'R'] = true;
+        const p = el.dataset.p, self = (p === '1' ? p1 : p2), enemy = (p === '1' ? p2 : p1);
+        if (el.dataset.v === 'l') held['p'+p+'L'] = true;
+        if (el.dataset.v === 'r') held['p'+p+'R'] = true;
         if (el.dataset.v === 'u' && self.vy === 0) self.vy = -24;
-        if (el.dataset.v === 'a') self.atk(opp);
-        if (el.dataset.v === 's') self.spec(opp);
+        if (el.dataset.v === 'a') self.atk(enemy);
+        if (el.dataset.v === 's') self.spec(enemy);
     });
 }, { passive: false });
 
 window.addEventListener('touchend', () => { 
     held.p1L = held.p1R = held.p2L = held.p2R = false; 
 });
-
-window.onresize = () => {
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
-};
