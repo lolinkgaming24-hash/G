@@ -1,181 +1,152 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;900&display=swap');
-
-* { 
-    margin: 0; 
-    padding: 0; 
-    box-sizing: border-box; 
-    touch-action: none; 
+* {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
     user-select: none;
+    outline: none;
+    -webkit-tap-highlight-color: transparent;
+    box-sizing: border-box;
 }
 
 body { 
+    margin: 0; 
     background: #000; 
-    font-family: 'Inter', sans-serif; 
+    color: #fff; 
+    font-family: sans-serif; 
     overflow: hidden; 
-    color: #fff;
-    height: 100vh;
-    width: 100vw;
+    touch-action: none; 
 }
 
-#game { 
+/* FIX 1: Canvas must be behind everything and 
+   pointer-events set to none so it never blocks a menu click.
+*/
+canvas { 
     display: block; 
+    width: 100vw; 
+    height: 100vh; 
     background: #0a0a0a; 
-}
-
-/* --- CENTERED OVERLAYS --- */
-.menu-overlay {
     position: fixed; 
     top: 0; 
     left: 0; 
-    width: 100%; 
-    height: 100%;
-    background: rgba(0, 0, 0, 0.9);
-    display: none; 
+    z-index: 1; 
+    pointer-events: none; 
+}
+
+/* HUD Layer */
+.hud { 
+    position: absolute; 
+    top: 15px; 
+    width: 38%; 
+    pointer-events: none; 
+    z-index: 10; 
+}
+#p1-hud { left: 10px; } 
+#p2-hud { right: 10px; }
+
+.bar { width: 100%; height: 12px; background: #222; border: 1px solid #444; border-radius: 6px; overflow: hidden; }
+.hp-f { width: 100%; height: 100%; background: #0f0; transition: width 0.2s; }
+.bar-cd { width: 100%; height: 6px; background: #111; border: 1px solid #333; border-radius: 3px; margin-top: 4px; overflow: hidden; }
+.cd-f { width: 0%; height: 100%; background: #0af; }
+
+/* FIX 2: The Overlay System
+   We remove 'pointer-events: none' from the base overlay 
+   and rely on display: none/flex.
+*/
+.overlay { 
+    position: fixed; 
+    inset: 0; 
+    background: rgba(0,0,0,0.92); 
+    display: none; /* Hidden by default */
     flex-direction: column; 
     align-items: center; 
-    justify-content: center;
-    z-index: 100;
+    justify-content: center; 
+    z-index: 2000; /* Highest priority */
 }
 
+/* This class is added via JS to show menus */
 .active-menu { 
-    display: flex; 
+    display: flex !important; 
 }
 
-h1 { 
-    font-size: 4rem; 
-    font-weight: 900; 
-    margin-bottom: 30px; 
-    letter-spacing: -2px;
-}
-
-h2 { 
+.title { 
+    font-size: 2.5rem; 
+    text-shadow: 0 0 10px #f00; 
     margin-bottom: 20px; 
-    font-size: 1.2rem; 
-    color: #666; 
-    text-transform: uppercase;
+    text-align: center; 
 }
 
-/* --- SIMPLE BUTTONS (WHITE BORDER) --- */
-.btn {
-    background: transparent;
-    border: 2px solid #fff;
-    color: #fff;
-    padding: 12px 40px;
-    font-size: 1rem;
-    font-weight: 900;
-    cursor: pointer;
-    margin: 10px;
-    text-transform: uppercase;
-    transition: all 0.2s ease;
-}
-
-.btn:hover {
-    background: #fff;
-    color: #000;
-}
-
-/* --- CHARACTER GRID --- */
-#char-grid {
-    display: grid; 
-    grid-template-columns: repeat(4, 1fr); 
-    gap: 10px;
-    max-width: 800px; 
-    width: 90%;
-}
-
-.char-btn {
-    background: transparent;
-    border: 1px solid #444;
-    color: #fff;
-    padding: 20px 10px;
-    cursor: pointer;
-    transition: 0.2s;
-    font-family: 'Inter';
-}
-
-.char-btn:hover {
-    border-color: #fff;
-    background: rgba(255, 255, 255, 0.1);
-}
-
-.char-btn strong { 
-    font-size: 0.9rem; 
-    font-weight: 900; 
-}
-
-/* --- HUD (TOP POSITIONS) --- */
-#hud {
-    position: fixed; 
-    top: 30px; 
-    width: 100%; 
-    padding: 0 50px;
-    display: flex; 
-    justify-content: space-between; 
-    pointer-events: none;
-}
-
-.stats { 
-    width: 300px; 
-}
-
-.bar-bg { 
-    width: 100%; 
-    height: 8px; 
+.menu-btn { 
+    padding: 15px 30px; 
     background: #222; 
-    margin-top: 6px; 
+    color: #fff; 
+    border: 2px solid #fff; 
+    margin: 10px; 
+    font-weight: bold; 
+    cursor: pointer;
+    touch-action: manipulation; 
 }
 
-.hp-fill { 
-    height: 100%; 
-    background: #fff; /* White HP for minimalist look */
-    width: 100%; 
-    transition: 0.3s; 
+.menu-btn:active {
+    background: #444;
 }
 
-.cd-fill { 
-    height: 100%; 
-    background: #555; /* Simple grey for energy */
-    width: 0%; 
-}
-
-/* --- CONTROLS (BOTTOM POSITION) --- */
-#controls {
-    position: fixed; 
-    bottom: 40px; 
-    width: 100%; 
-    display: none;
-    padding: 0 40px; 
-    justify-content: space-between;
-}
-
-.pad { 
+/* Character Selection Grid */
+.grid { 
     display: grid; 
-    grid-template-columns: repeat(3, 70px); 
-    gap: 10px; 
+    grid-template-columns: repeat(5, 1fr); 
+    gap: 8px; 
+    width: 95%; 
+    max-width: 800px; 
 }
 
-.ctrl-btn {
-    width: 70px; 
-    height: 70px; 
-    background: transparent;
+.char-btn { 
+    padding: 15px 5px; 
+    font-size: 11px; 
+    background: #111; 
+    color: #fff; 
     border: 1px solid #555; 
-    color: #fff;
-    font-weight: 900; 
-    display: flex; 
-    align-items: center; 
-    justify-content: center;
-    border-radius: 4px;
+    text-transform: uppercase; 
+    cursor: pointer;
+    touch-action: manipulation; 
 }
 
-.ctrl-btn:active { 
-    background: #fff; 
-    color: #000; 
-    border-color: #fff;
+/* FIX 3: Pause Button 
+*/
+#pause-btn { 
+    position: fixed; 
+    top: 15px; 
+    left: 50%; 
+    transform: translateX(-50%); 
+    width: 50px; 
+    height: 50px; 
+    background: #1a1a1a; 
+    color: #fff; 
+    border: 2px solid #fff; 
+    border-radius: 50%; 
+    z-index: 1000; 
+    display: none; 
+    font-weight: bold; 
+    cursor: pointer; 
+    touch-action: manipulation;
 }
 
-/* --- WIN TEXT --- */
-#win-text {
-    font-size: 5rem; 
-    font-weight: 900; 
-    margin-bottom: 20px;
+/* Control Pads */
+.ctrl-container { 
+    position: fixed; 
+    inset: 0; 
+    pointer-events: none; 
+    z-index: 100; 
+    display: none; 
 }
+
+.pad {
+    position: fixed;
+    bottom: 30px;
+    display: grid;
+    grid-template-columns: repeat(3, 75px);
+    grid-template-rows: repeat(2, 75px);
+    gap: 12px;
+    pointer-events: auto; /* Allows buttons to be pressed */
+}
+
+#p1-pad { left: 20px; }
+#p2-pad { right: 20px; display: none; }
