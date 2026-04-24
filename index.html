@@ -2,22 +2,58 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>JJK Stickman Battle</title>
     <link rel="stylesheet" href="style.css">
     <style>
-        /* GLOBAL ZOOM FIX */
+        /* GLOBAL ZOOM & CLICK FIX */
         html, body {
+            margin: 0;
+            padding: 0;
+            width: 100vw;
+            height: 100vh;
             overflow: hidden;
-            width: 100%;
-            height: 100%;
-            /* This prevents double-tap zoom on most modern browsers */
-            touch-action: none; 
+            background: #000;
+            /* Prevents system gestures but allows clicks */
+            touch-action: manipulation; 
             user-select: none;
             -webkit-user-select: none;
         }
 
-        /* Modernized HUD and Button Styling */
+        /* Ensure the menu is on top and interactive */
+        .overlay {
+            position: fixed;
+            inset: 0;
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999; /* Higher than everything else */
+            background: rgba(0,0,0,0.9);
+            pointer-events: auto; /* CRITICAL: Allows clicks */
+        }
+
+        .active-menu { display: flex !important; }
+
+        .menu-btn {
+            padding: 20px 40px;
+            margin: 15px;
+            font-size: 1.5rem;
+            font-weight: 900;
+            color: white;
+            background: transparent;
+            border: 3px solid white;
+            cursor: pointer;
+            pointer-events: auto;
+            touch-action: manipulation;
+        }
+
+        /* HUD Styling */
+        .hud { position: fixed; top: 20px; z-index: 1000; pointer-events: none; }
+        #p1-hud { left: 20px; }
+        #p2-hud { right: 20px; text-align: right; }
+        
+        /* Mobile Pads */
         .pad {
             position: fixed;
             bottom: 30px;
@@ -25,107 +61,76 @@
             grid-template-columns: repeat(3, 85px);
             grid-template-rows: repeat(2, 85px);
             gap: 15px;
-            opacity: 0.8;
-            user-select: none;
-            z-index: 100;
+            z-index: 2000;
         }
         #p1-pad { left: 40px; }
         #p2-pad { right: 40px; display: none; }
 
         .pad button {
-            width: 85px;
-            height: 85px;
+            width: 85px; height: 85px;
             border-radius: 15px;
             border: 3px solid #fff;
             background: rgba(0,0,0,0.6);
             color: white;
             font-weight: bold;
-            font-size: 1.2rem;
-            /* Critical for button responsiveness */
-            touch-action: manipulation; 
+            touch-action: manipulation;
         }
-        .btn-u { grid-column: 2; grid-row: 1; }
-        .btn-l { grid-column: 1; grid-row: 2; }
-        .btn-r { grid-column: 3; grid-row: 2; }
-        .btn-a { grid-column: 2; grid-row: 2; background: rgba(200,0,0,0.6) !important; }
-        .btn-s { grid-column: 3; grid-row: 1; background: rgba(0,100,255,0.6) !important; }
-        
-        #p2-pad .btn-s { grid-column: 1; grid-row: 1; }
     </style>
 </head>
 <body>
-    <div id="ui-layer">
-        <div id="p1-hud" class="hud">
-            <div class="bar"><div id="p1-hp" class="hp-f"></div></div>
-            <div class="bar-cd"><div id="p1-cd" class="cd-f"></div></div>
-            <div id="p1-stun" class="stun-txt"></div>
-        </div>
-        <div id="p2-hud" class="hud">
-            <div class="bar"><div id="p2-hp" class="hp-f"></div></div>
-            <div class="bar-cd"><div id="p2-cd" class="cd-f"></div></div>
-            <div id="p2-stun" class="stun-txt"></div>
-        </div>
+
+    <div id="m-start" class="overlay active-menu">
+        <h1 class="title" style="color:white; font-size: 3rem; margin-bottom: 20px;">JJK STICKMAN</h1>
+        <button class="menu-btn" onpointerdown="startSelectedMode('1P')">1P vs CPU</button>
+        <button class="menu-btn" onpointerdown="startSelectedMode('2P')">2P VERSUS</button>
     </div>
 
-    <div id="menu" class="overlay active-menu">
-        <h1 class="title">JJK STICKMAN</h1>
-        <div id="m-start">
-            <button class="menu-btn" onpointerdown="startSelectedMode('1P')">1P vs CPU</button>
-            <button class="menu-btn" onpointerdown="startSelectedMode('2P')">2P VERSUS</button>
-        </div>
-        <div id="m-char" style="display:none; width: 95%;">
-            <h2 id="selection-title">PLAYER 1: SELECT CHARACTER</h2>
-            <div class="grid" id="char-grid"></div>
-        </div>
+    <div id="m-char" class="overlay">
+        <h2 id="selection-title" style="color:white;">SELECT CHARACTER</h2>
+        <div class="grid" id="char-grid"></div>
+    </div>
+
+    <div id="p1-hud" class="hud">
+        <div class="bar"><div id="p1-hp" class="hp-f" style="height:10px; background:white;"></div></div>
+        <div class="bar-cd"><div id="p1-cd" class="cd-f" style="height:5px; background:blue;"></div></div>
+    </div>
+    <div id="p2-hud" class="hud">
+        <div class="bar"><div id="p2-hp" class="hp-f" style="height:10px; background:white;"></div></div>
+        <div class="bar-cd"><div id="p2-cd" class="cd-f" style="height:5px; background:blue;"></div></div>
     </div>
 
     <div id="win-screen" class="overlay">
-        <h1 id="win-text" class="title">PLAYER 1 WINS</h1>
+        <h1 id="win-text" class="title" style="color:white;">WINS</h1>
         <button class="menu-btn" onpointerdown="handleRestart()">REMATCH</button>
-    </div>
-
-    <div id="m-pause" class="overlay">
-        <h1>PAUSED</h1>
-        <button class="menu-btn" onpointerdown="handlePauseToggle()">RESUME</button>
-        <button class="menu-btn" onpointerdown="handleRestart()">EXIT</button>
     </div>
 
     <div id="controls" style="display:none;">
         <div id="p1-pad" class="pad">
-            <button class="btn-u" data-p="1" data-v="u">JUMP</button>
-            <button class="btn-l" data-p="1" data-v="l">←</button>
-            <button class="btn-r" data-p="1" data-v="r">→</button>
-            <button class="btn-a" data-p="1" data-v="a">ATK</button>
-            <button class="btn-s" data-p="1" data-v="s">SPC</button>
+            <button data-p="1" data-v="u" style="grid-column:2;">JUMP</button>
+            <button data-p="1" data-v="l" style="grid-column:1; grid-row:2;">←</button>
+            <button data-p="1" data-v="r" style="grid-column:3; grid-row:2;">→</button>
+            <button data-p="1" data-v="a" style="grid-column:2; grid-row:2; background:red;">ATK</button>
+            <button data-p="1" data-v="s" style="grid-column:3; grid-row:1; background:blue;">SPC</button>
         </div>
         <div id="p2-pad" class="pad">
-            <button class="btn-u" data-p="2" data-v="u">JUMP</button>
-            <button class="btn-l" data-p="2" data-v="l">←</button>
-            <button class="btn-r" data-p="2" data-v="r">→</button>
-            <button class="btn-a" data-p="2" data-v="a">ATK</button>
-            <button class="btn-s" data-p="2" data-v="s">SPC</button>
+            <button data-p="2" data-v="u" style="grid-column:2;">JUMP</button>
+            <button data-p="2" data-v="l" style="grid-column:1; grid-row:2;">←</button>
+            <button data-p="2" data-v="r" style="grid-column:3; grid-row:2;">→</button>
+            <button data-p="2" data-v="a" style="grid-column:2; grid-row:2; background:red;">ATK</button>
+            <button data-p="2" data-v="s" style="grid-column:1; grid-row:1; background:blue;">SPC</button>
         </div>
     </div>
 
-    <button id="pause-btn" style="display:none;" onpointerdown="handlePauseToggle()">II</button>
-    <canvas id="game"></canvas>
+    <button id="pause-btn" style="position:fixed; top:20px; left:50%; display:none; z-index:5000;" onpointerdown="handlePauseToggle()">PAUSE</button>
 
     <script>
-        // HARD-LOCK ZOOM: Prevents any multi-touch or double-tap zoom
-        document.addEventListener('touchstart', function(event) {
-            if (event.touches.length > 1) {
-                event.preventDefault();
-            }
+        // Block double-tap zoom specifically without breaking clicks
+        let lastTouch = 0;
+        document.addEventListener('touchend', (e) => {
+            const now = Date.now();
+            if (now - lastTouch <= 300) e.preventDefault();
+            lastTouch = now;
         }, { passive: false });
-
-        let lastTouchEnd = 0;
-        document.addEventListener('touchend', function(event) {
-            const now = (new Date()).getTime();
-            if (now - lastTouchEnd <= 300) {
-                event.preventDefault();
-            }
-            lastTouchEnd = now;
-        }, false);
     </script>
     <script src="script.js"></script>
 </body>
