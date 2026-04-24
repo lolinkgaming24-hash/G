@@ -5,98 +5,58 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>JJK Stickman Battle</title>
     <link rel="stylesheet" href="style.css">
-    <style>
-        /* Modernized HUD and Button Styling */
-        .pad {
-            position: fixed;
-            bottom: 30px;
-            display: grid;
-            grid-template-columns: repeat(3, 85px);
-            grid-template-rows: repeat(2, 85px);
-            gap: 15px;
-            opacity: 0.8;
-            user-select: none;
-            z-index: 100;
-        }
-        #p1-pad { left: 40px; }
-        #p2-pad { right: 40px; display: none; }
-
-        .pad button {
-            width: 85px;
-            height: 85px;
-            border-radius: 15px;
-            border: 3px solid #fff;
-            background: rgba(0,0,0,0.6);
-            color: white;
-            font-weight: bold;
-            font-size: 1.2rem;
-            touch-action: none;
-        }
-        .btn-u { grid-column: 2; grid-row: 1; }
-        .btn-l { grid-column: 1; grid-row: 2; }
-        .btn-r { grid-column: 3; grid-row: 2; }
-        .btn-a { grid-column: 2; grid-row: 2; background: rgba(200,0,0,0.6) !important; }
-        .btn-s { grid-column: 3; grid-row: 1; background: rgba(0,100,255,0.6) !important; }
-        
-        #p2-pad .btn-s { grid-column: 1; grid-row: 1; }
-    </style>
 </head>
 <body>
-    <div id="ui-layer">
-        <div id="p1-hud" class="hud">
-            <div class="bar"><div id="p1-hp" class="hp-f"></div></div>
-            <div class="bar-cd"><div id="p1-cd" class="cd-f"></div></div>
-            <div id="p1-stun" class="stun-txt"></div>
-        </div>
-        <div id="p2-hud" class="hud">
-            <div class="bar"><div id="p2-hp" class="hp-f"></div></div>
-            <div class="bar-cd"><div id="p2-cd" class="cd-f"></div></div>
-            <div id="p2-stun" class="stun-txt"></div>
-        </div>
+    <div id="p1-hud" class="hud">
+        <div class="bar"><div id="p1-hp" class="hp-f"></div></div>
+        <div class="bar-cd"><div id="p1-cd" class="cd-f"></div></div>
+    </div>
+    <div id="p2-hud" class="hud">
+        <div class="bar"><div id="p2-hp" class="hp-f"></div></div>
+        <div class="bar-cd"><div id="p2-cd" class="cd-f"></div></div>
     </div>
 
-    <div id="menu" class="overlay active-menu">
+    <div id="m-start" class="overlay active-menu">
         <h1 class="title">JJK STICKMAN</h1>
-        <div id="m-start">
-            <button class="menu-btn" onpointerdown="initMode('1P')">1P vs CPU</button>
-            <button class="menu-btn" onpointerdown="initMode('2P')">2P VERSUS</button>
-        </div>
-        <div id="m-char" style="display:none; width: 95%;">
-            <h2 id="selection-title">PLAYER 1: SELECT CHARACTER</h2>
-            <div class="grid" id="char-grid"></div>
-        </div>
+        <button class="menu-btn" onpointerdown="startSelectedMode('1P')">1P vs CPU</button>
+        <button class="menu-btn" onpointerdown="startSelectedMode('2P')">2P VERSUS</button>
+    </div>
+
+    <div id="m-char" class="overlay">
+        <h2 id="selection-title" class="title" style="font-size: 1.5rem;">SELECT CHARACTER</h2>
+        <div class="grid" id="char-grid"></div>
     </div>
 
     <div id="win-screen" class="overlay">
         <h1 id="win-text" class="title">PLAYER 1 WINS</h1>
-        <button class="menu-btn" onpointerdown="location.reload()">REMATCH</button>
+        <button class="menu-btn" onpointerdown="handleRestart()">REMATCH</button>
     </div>
 
-    <div id="pause-screen" class="overlay">
-        <h1>PAUSED</h1>
-        <button class="menu-btn" onpointerdown="togglePause()">RESUME</button>
-        <button class="menu-btn" onpointerdown="location.reload()">EXIT</button>
+    <div id="m-pause" class="overlay">
+        <h1 class="title">PAUSED</h1>
+        <button class="menu-btn" onpointerdown="handlePauseToggle()">RESUME</button>
+        <button class="menu-btn" onpointerdown="handleRestart()">EXIT</button>
     </div>
 
-    <div id="controls" style="display:none;">
+    <div id="controls" class="ctrl-container">
         <div id="p1-pad" class="pad">
-            <button class="btn-u" data-p="1" data-v="u">JUMP</button>
-            <button class="btn-l" data-p="1" data-v="l">←</button>
-            <button class="btn-r" data-p="1" data-v="r">→</button>
-            <button class="btn-a" data-p="1" data-v="a">ATK</button>
-            <button class="btn-s" data-p="1" data-v="s">SPC</button>
+            <button class="ctrl-btn btn-u" data-p="1" data-v="u">JUMP</button>
+            <button class="ctrl-btn btn-l" data-p="1" data-v="l">←</button>
+            <button class="ctrl-btn btn-r" data-p="1" data-v="r">→</button>
+            <button class="ctrl-btn btn-a" data-p="1" data-v="a">ATK</button>
+            <button class="ctrl-btn btn-s" data-p="1" data-v="s">SPC</button>
         </div>
         <div id="p2-pad" class="pad">
-            <button class="btn-u" data-p="2" data-v="u">JUMP</button>
-            <button class="btn-l" data-p="2" data-v="l">←</button>
-            <button class="btn-r" data-p="2" data-v="r">→</button>
-            <button class="btn-a" data-p="2" data-v="a">ATK</button>
-            <button class="btn-s" data-p="2" data-v="s">SPC</button>
+            <button class="ctrl-btn btn-u" data-p="2" data-v="u">JUMP</button>
+            <button class="ctrl-btn btn-l" data-p="2" data-v="l">←</button>
+            <button class="ctrl-btn btn-r" data-p="2" data-v="r">→</button>
+            <button class="ctrl-btn btn-a" data-p="2" data-v="a">ATK</button>
+            <button class="ctrl-btn btn-s" data-p="2" data-v="s">SPC</button>
         </div>
     </div>
 
-    <button id="pause-btn" style="display:none;" onpointerdown="togglePause()">II</button>
-    <canvas id="game"></canvas>
+    <button id="pause-btn" onpointerdown="handlePauseToggle()">II</button>
+    
     <script src="script.js"></script>
 </body>
 </html>
