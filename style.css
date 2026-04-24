@@ -1,106 +1,181 @@
-@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;900&family=Bebas+Neue&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;900&display=swap');
 
-* { margin: 0; padding: 0; box-sizing: border-box; touch-action: none; }
+* { 
+    margin: 0; 
+    padding: 0; 
+    box-sizing: border-box; 
+    touch-action: none; 
+    user-select: none;
+}
 
 body { 
-    background: #050505; 
-    font-family: 'Orbitron', sans-serif; 
+    background: #000; 
+    font-family: 'Inter', sans-serif; 
     overflow: hidden; 
     color: #fff;
+    height: 100vh;
+    width: 100vw;
 }
 
-#game { display: block; background: radial-gradient(circle, #1a1a1a 0%, #000 100%); }
+#game { 
+    display: block; 
+    background: #0a0a0a; 
+}
 
-/* --- MENU OVERLAYS --- */
+/* --- CENTERED OVERLAYS --- */
 .menu-overlay {
-    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-    background: rgba(0, 0, 0, 0.85);
-    display: none; flex-direction: column; align-items: center; justify-content: center;
-    z-index: 100; backdrop-filter: blur(8px);
+    position: fixed; 
+    top: 0; 
+    left: 0; 
+    width: 100%; 
+    height: 100%;
+    background: rgba(0, 0, 0, 0.9);
+    display: none; 
+    flex-direction: column; 
+    align-items: center; 
+    justify-content: center;
+    z-index: 100;
 }
-.active-menu { display: flex; }
+
+.active-menu { 
+    display: flex; 
+}
 
 h1 { 
-    font-size: 5rem; font-weight: 900; color: #ff3333; 
-    text-shadow: 0 0 20px #ff0000; margin-bottom: 40px; font-family: 'Bebas Neue', cursive;
+    font-size: 4rem; 
+    font-weight: 900; 
+    margin-bottom: 30px; 
+    letter-spacing: -2px;
 }
 
-h2 { margin-bottom: 20px; color: #aaa; letter-spacing: 5px; }
+h2 { 
+    margin-bottom: 20px; 
+    font-size: 1.2rem; 
+    color: #666; 
+    text-transform: uppercase;
+}
 
-/* --- BUTTON STYLING (THE DESIGN IS BACK) --- */
+/* --- SIMPLE BUTTONS (WHITE BORDER) --- */
 .btn {
-    background: rgba(255, 255, 255, 0.05);
+    background: transparent;
     border: 2px solid #fff;
     color: #fff;
-    padding: 15px 40px;
-    font-size: 1.2rem;
-    font-family: 'Orbitron';
+    padding: 12px 40px;
+    font-size: 1rem;
+    font-weight: 900;
     cursor: pointer;
-    transition: 0.2s;
     margin: 10px;
     text-transform: uppercase;
-    box-shadow: 0 0 10px rgba(255, 255, 255, 0.1);
+    transition: all 0.2s ease;
 }
 
 .btn:hover {
     background: #fff;
     color: #000;
-    box-shadow: 0 0 30px #fff;
-    transform: scale(1.05);
 }
 
 /* --- CHARACTER GRID --- */
 #char-grid {
-    display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px;
-    max-width: 900px; padding: 20px;
+    display: grid; 
+    grid-template-columns: repeat(4, 1fr); 
+    gap: 10px;
+    max-width: 800px; 
+    width: 90%;
 }
 
 .char-btn {
-    background: rgba(255, 255, 255, 0.03);
-    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: transparent;
+    border: 1px solid #444;
     color: #fff;
-    padding: 25px 15px;
+    padding: 20px 10px;
     cursor: pointer;
-    font-family: 'Orbitron';
-    transition: 0.3s;
-    text-align: center;
+    transition: 0.2s;
+    font-family: 'Inter';
 }
 
 .char-btn:hover {
-    border-color: #00ccff;
-    background: rgba(0, 204, 255, 0.1);
-    box-shadow: inset 0 0 15px rgba(0, 204, 255, 0.2);
+    border-color: #fff;
+    background: rgba(255, 255, 255, 0.1);
 }
 
-.char-btn strong { font-size: 1.1rem; display: block; }
+.char-btn strong { 
+    font-size: 0.9rem; 
+    font-weight: 900; 
+}
 
-/* --- HUD & BARS --- */
+/* --- HUD (TOP POSITIONS) --- */
 #hud {
-    position: fixed; top: 0; width: 100%; padding: 20px;
-    display: flex; justify-content: space-between; pointer-events: none;
+    position: fixed; 
+    top: 30px; 
+    width: 100%; 
+    padding: 0 50px;
+    display: flex; 
+    justify-content: space-between; 
+    pointer-events: none;
 }
 
-.stats { width: 35%; background: rgba(0,0,0,0.5); padding: 10px; border: 1px solid #333; }
-.bar-bg { width: 100%; height: 12px; background: #222; margin: 5px 0; border-radius: 2px; overflow: hidden; }
-.hp-fill { height: 100%; background: #ff3333; width: 100%; transition: 0.3s; box-shadow: 0 0 10px #ff0000; }
-.cd-fill { height: 100%; background: #00ccff; width: 0%; transition: 0.1s; box-shadow: 0 0 10px #00ccff; }
+.stats { 
+    width: 300px; 
+}
 
-/* --- TOUCH CONTROLS --- */
+.bar-bg { 
+    width: 100%; 
+    height: 8px; 
+    background: #222; 
+    margin-top: 6px; 
+}
+
+.hp-fill { 
+    height: 100%; 
+    background: #fff; /* White HP for minimalist look */
+    width: 100%; 
+    transition: 0.3s; 
+}
+
+.cd-fill { 
+    height: 100%; 
+    background: #555; /* Simple grey for energy */
+    width: 0%; 
+}
+
+/* --- CONTROLS (BOTTOM POSITION) --- */
 #controls {
-    position: fixed; bottom: 30px; width: 100%; display: none;
-    padding: 0 40px; justify-content: space-between;
+    position: fixed; 
+    bottom: 40px; 
+    width: 100%; 
+    display: none;
+    padding: 0 40px; 
+    justify-content: space-between;
 }
 
-.pad { display: grid; grid-template-columns: repeat(3, 70px); gap: 10px; }
+.pad { 
+    display: grid; 
+    grid-template-columns: repeat(3, 70px); 
+    gap: 10px; 
+}
+
 .ctrl-btn {
-    width: 75px; height: 75px; background: rgba(255,255,255,0.1);
-    border: 2px solid rgba(255,255,255,0.3); color: #fff;
-    font-weight: 900; font-size: 1.2rem; border-radius: 10px;
-    display: flex; align-items: center; justify-content: center;
+    width: 70px; 
+    height: 70px; 
+    background: transparent;
+    border: 1px solid #555; 
+    color: #fff;
+    font-weight: 900; 
+    display: flex; 
+    align-items: center; 
+    justify-content: center;
+    border-radius: 4px;
 }
-.ctrl-btn:active { background: #fff; color: #000; }
 
+.ctrl-btn:active { 
+    background: #fff; 
+    color: #000; 
+    border-color: #fff;
+}
+
+/* --- WIN TEXT --- */
 #win-text {
-    font-size: 6rem; font-family: 'Bebas Neue'; color: #fff;
-    text-shadow: 0 0 30px #f00; margin-bottom: 20px;
+    font-size: 5rem; 
+    font-weight: 900; 
+    margin-bottom: 20px;
 }
