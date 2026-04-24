@@ -270,7 +270,7 @@ class Sorcerer {
                 break;
             case 'Gojo': 
                 this.proj = { active: true, x: this.x, y: this.y, vx: this.dir * 9, type: 'PURPLE' }; 
-                this.spT = 650; 
+                this.spT = 480; 
                 break;
             case 'Sukuna': 
                 this.fx = 55; this.spT = 480; 
@@ -307,10 +307,10 @@ class Sorcerer {
                 break;
             case 'Ryu': 
                 this.fx = 140; 
-                this.spT = (opp.k === 'Yuta') ? 480 : 950; 
+                this.spT = (opp.k === 'Yuta') ? 480 : 650; 
                 break;
             case 'Yuta': 
-                this.spT = 650; 
+                this.spT = 480; 
                 if (opp.k === 'Ryu') {
                     this.fx = 140; 
                     this.rika = { active: true, x: this.x - (this.dir * 75), y: this.y, frame: 140, type: 'BEAM' };
@@ -373,7 +373,7 @@ class Sorcerer {
             this.fx--;
             if (!opp.inShadow) {
                 let d = Math.abs(this.x - opp.x);
-                if (this.k === 'Sukuna' && d < 210) { opp.hp -= 3.5; opp.stun = 5; }
+                if (this.k === 'Sukuna' && d < 120) { opp.hp -= 3.5; opp.stun = 5; }
                 if (this.k === 'Itadori' && d < 85) { opp.hp -= 85; opp.stun = 55; this.fx = 0; }
                 if (this.k === 'Naoya' && d < 95) { opp.stun = 110; this.fx = 0; }
                 if (this.k === 'Nanami' && d < 90) { opp.hp -= 65; opp.silence = 250; this.fx = 0; }
