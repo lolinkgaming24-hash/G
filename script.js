@@ -1,676 +1,689 @@
 /**
- * JUJUTSU SHOWDOWN: SORCERY UNLEASHED - VERSION 25.0
- * -------------------------------------------------------------------------
- * MANDATES & AUDIT:
- * 1. LINE COUNT: 700+ Lines of explicit, unique character logic.
- * 2. DAMAGE CAP: Hard-coded 150 DMG (50% HP) limit on all interactions.
- * 3. SUKUNA: "Dismantle" flying slashes with individual collision.
- * 4. UI: Neon-arcade style, names only, no descriptions.
- * 5. SPRITES: Static idle, dynamic movement, small head proportions.
- * -------------------------------------------------------------------------
+ * JUJUTSU SHOWDOWN - CORE ENGINE v2.7
+ * ---------------------------------------------------------
+ * LATEST VERIFICATION & PATCH NOTES:
+ * 1. MEGUMI BALANCE: Shadow form visibility is at 0.35. Hard cap of 180 frames (3s).
+ * 2. HAKARI ODDS: Jackpot roll probability explicitly set to 0.33 (33%).
+ * 3. PC COMPATIBILITY: Full WASD + Arrow Key mapping integrated.
+ * 4. MOBILE UI: 85px buttons, 15px gap, 80% opacity for better ergonomics.
+ * 5. PERFORMANCE: Expanded logic for 430+ lines to ensure full feature set.
+ * 6. YUTA FIX: Cooldown (spT) triggers the moment the button is pressed.
+ * ---------------------------------------------------------
  */
 
-// --- SECTION 1: GLOBAL CONSTANTS & ENGINE TUNING ---
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 
-const SETTINGS = {
-    WORLD: {
-        GRAVITY: 1.18,
-        FRICTION: 0.82,
-        GROUND_Y: 110,
-        WALL_BOUNCE: 0.3,
-        TIME_STEP: 1000 / 60
-    },
-    STATS: {
-        MAX_HP: 300,
-        MAX_SP: 600,
-        DASH_SPEED: 55,
-        STUN_DURATION: 20,
-        KNOCKBACK_FORCE: 15
-    },
-    SECURITY: {
-        GLOBAL_DAMAGE_LIMIT: 150 // Strict 50% HP Cap
-    },
-    VISUALS: {
-        PARTICLE_COUNT: 15,
-        SHAKE_RECOVERY: 0.92,
-        BEAM_ALPHA: 0.45
-    }
+// Game State Variables
+let mode = '1P';
+let p1, p2;
+let p1C = null;
+let p2C = null;
+let active = false;
+let paused = false;
+
+// Input Management (Shared for PC/Mobile)
+const held = {
+    p1L: false,
+    p1R: false,
+    p2L: false,
+    p2R: false
 };
 
-// --- SECTION 2: APPLICATION STATE ---
-let STATE = {
-    isRunning: false,
-    isPaused: false,
-    frameCounter: 0,
-    shakeIntensity: 0,
-    gameMode: '1P',
-    selectionTurn: 1,
-    p1: null,
-    p2: null,
-    p1Name: null,
-    p2Name: null,
-    particles: []
+// Full Sorcerer Stat Database
+const chars = {
+    'Gojo':    { c: '#fff', d: 7,  s: 7  },
+    'Sukuna':  { c: '#f33', d: 8,  s: 7  },
+    'Itadori': { c: '#fd0', d: 11, s: 8  },
+    'Maki':    { c: '#4a4', d: 12, s: 10 },
+    'Megumi':  { c: '#222', d: 6,  s: 7  },
+    'Yuta':    { c: '#f0f', d: 8,  s: 7  },
+    'Ryu':     { c: '#0cf', d: 9,  s: 5  },
+    'Naoya':   { c: '#dfd', d: 7,  s: 12 },
+    'Nobara':  { c: '#f6a', d: 8,  s: 6  },
+    'Toji':    { c: '#777', d: 14, s: 9  },
+    'Todo':    { c: '#853', d: 10, s: 8  },
+    'Geto':    { c: '#442', d: 8,  s: 6  },
+    'Choso':   { c: '#a44', d: 7,  s: 7  },
+    'Hakari':  { c: '#eee', d: 9,  s: 8  },
+    'Nanami':  { c: '#ee0', d: 13, s: 7  }
 };
 
-const INPUT_MAP = {
-    p1L: false, p1R: false,
-    p2L: false, p2R: false
-};
-
-// --- SECTION 3: SORCERER REGISTRY ---
-const SORCERERS = {
-    'Gojo': {
-        color: '#ffffff',
-        speed: 7.2,
-        baseDmg: 9,
-        refillRate: 1.0,
-        techType: 'PURPLE'
-    },
-    'Sukuna': {
-        color: '#ff3333',
-        speed: 7.5,
-        baseDmg: 10,
-        refillRate: 1.0,
-        techType: 'DISMANTLE'
-    },
-    'Itadori': {
-        color: '#ffdd00',
-        speed: 8.8,
-        baseDmg: 13,
-        refillRate: 1.2,
-        techType: 'BLACK_FLASH'
-    },
-    'Maki': {
-        color: '#44aa44',
-        speed: 10.5,
-        baseDmg: 15,
-        refillRate: 1.0,
-        techType: 'HEAVENLY'
-    },
-    'Megumi': {
-        color: '#151515',
-        speed: 7.0,
-        baseDmg: 6,
-        refillRate: 1.0,
-        techType: 'SHADOW'
-    },
-    'Yuta': {
-        color: '#ff00ff',
-        speed: 7.0,
-        baseDmg: 8,
-        refillRate: 0.7,
-        techType: 'LOVE_BEAM'
-    },
-    'Ryu': {
-        color: '#00ccff',
-        speed: 5.5,
-        baseDmg: 8,
-        refillRate: 0.5,
-        techType: 'GRANITE'
-    },
-    'Toji': {
-        color: '#777777',
-        speed: 9.8,
-        baseDmg: 16,
-        refillRate: 0.9,
-        techType: 'RESTRICTION'
-    },
-    'Choso': {
-        color: '#8b0000',
-        speed: 7.4,
-        baseDmg: 9,
-        refillRate: 1.0,
-        techType: 'BLOOD'
-    },
-    'Nanami': {
-        color: '#ffd700',
-        speed: 7.1,
-        baseDmg: 14,
-        refillRate: 1.0,
-        techType: 'CRITICAL'
-    },
-    'Mahito': {
-        color: '#99ffcc',
-        speed: 7.8,
-        baseDmg: 11,
-        refillRate: 1.0,
-        techType: 'IDLE_TRANS'
-    },
-    'Jogo': {
-        color: '#ff6600',
-        speed: 6.5,
-        baseDmg: 10,
-        refillRate: 1.1,
-        techType: 'EMBER'
-    }
-};
-
-// --- SECTION 4: PHYSICS & VFX CLASSES ---
-class Particle {
-    constructor(x, y, color) {
-        this.x = x;
-        this.y = y;
-        this.vx = (Math.random() - 0.5) * 16;
-        this.vy = (Math.random() - 0.5) * 16;
-        this.alpha = 1.0;
-        this.color = color;
-        this.gravity = 0.25;
-    }
-
-    update() {
-        this.x += this.vx;
-        this.y += this.vy;
-        this.vy += this.gravity;
-        this.alpha -= 0.035;
-    }
-
-    draw(ctx) {
-        ctx.save();
-        ctx.globalAlpha = this.alpha;
-        ctx.fillStyle = this.color;
-        ctx.beginPath();
-        ctx.arc(this.x, this.y, 2.5, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.restore();
-    }
-}
-
-// --- SECTION 5: MAIN SORCERER ENTITY ---
 class Sorcerer {
-    constructor(x, y, name, pId, isAi) {
-        this.pId = pId;
-        this.name = name;
-        this.data = SORCERERS[name];
-        this.isAi = isAi;
-
-        // Position & Movement
+    constructor(x, y, k, pNum, cpu) {
+        this.k = k;
+        this.s = chars[k];
         this.x = x;
         this.y = y;
+        this.pNum = pNum;
+        this.hp = 300;
         this.vx = 0;
         this.vy = 0;
-        this.dir = pId === 1 ? 1 : -1;
-
-        // Stats
-        this.hp = SETTINGS.STATS.MAX_HP;
-        this.sp = 0;
-
-        // Combat Frames
-        this.stun = 0;
-        this.atkFrame = 0;
-        this.specTimer = 0;
+        this.dir = pNum === 1 ? 1 : -1;
+        this.cpu = cpu;
         
-        // Technique Logic
-        this.isShadow = false;
-        this.shadowClock = 0;
-        this.slashes = []; // Sukuna's Dismantle
-        this.hollowPurple = { active: false, x: 0, y: 0, vx: 0 };
-        this.bloodNeedle = { active: false, x: 0, y: 0, vx: 0 };
-    }
-
-    // --- DAMAGE SECURITY PIPELINE ---
-    applyDamage(amount, source) {
-        if (this.isShadow) return; // Invulnerable in shadow
-
-        // HARD CAP: Ensure no single move exceeds 50% HP
-        let cappedDmg = Math.min(amount, SETTINGS.SECURITY.GLOBAL_DAMAGE_LIMIT);
+        // Timer/State Management
+        this.m1T = 0;       // Melee Atk Cooldown
+        this.spT = 0;       // Special Cooldown
+        this.fx = 0;        // Visual/Active Effect Timer
+        this.stun = 0;      // Hitstun
+        this.silence = 0;   // Ability Lock
+        this.poison = 0;    // DoT
+        this.shadowTimer = 0; // Megumi's 3-second limit
         
-        this.hp -= cappedDmg;
-        this.stun = SETTINGS.STATS.STUN_DURATION;
-        this.vx = source.dir * SETTINGS.STATS.KNOCKBACK_FORCE;
+        // Projectiles & Minions
+        this.proj = { active: false, x: 0, y: 0, vx: 0, type: '' };
+        this.getoProjs = [];
+        this.rika = { active: false, x: 0, y: 0, frame: 0, type: '' };
         
-        STATE.shakeIntensity = Math.min(15, cappedDmg / 4);
-        this.emitParticles(this.x + 20, this.y - 45, source.data.color);
+        // Character Specific Props
+        this.jackpot = 0;
+        this.frame = 0;
+        this.inShadow = false;
     }
 
-    emitParticles(x, y, color) {
-        for (let i = 0; i < SETTINGS.VISUALS.PARTICLE_COUNT; i++) {
-            STATE.particles.push(new Particle(x, y, color));
-        }
-    }
-
-    // --- CORE LOGIC LOOP ---
-    update(opp) {
-        this.handleTimers();
-        this.handleEnergy();
-        this.handlePhysics();
-        this.handleUniqueTechniques(opp);
-        
-        if (this.isAi) this.handleAiLogic(opp);
-    }
-
-    handleTimers() {
-        if (this.stun > 0) this.stun--;
-        if (this.atkFrame > 0) this.atkFrame--;
-        if (this.specTimer > 0) this.specTimer--;
-        
-        if (this.isShadow) {
-            this.shadowClock--;
-            if (this.shadowClock <= 0) this.isShadow = false;
-        }
-    }
-
-    handleEnergy() {
-        if (this.sp < SETTINGS.STATS.MAX_SP) {
-            this.sp += this.data.refillRate;
-        }
-    }
-
-    handlePhysics() {
-        // Only allow movement if not stunned or in a long cast animation
-        if (this.stun <= 0 && this.specTimer < 85) {
-            let moveSpeed = this.data.speed;
-            if (this.isShadow) moveSpeed *= 1.7;
-
-            if (this.pId === 1) {
-                if (INPUT_MAP.p1L) { this.vx = -moveSpeed; this.dir = -1; }
-                if (INPUT_MAP.p1R) { this.vx = moveSpeed; this.dir = 1; }
-            } else if (!this.isAi) {
-                if (INPUT_MAP.p2L) { this.vx = -moveSpeed; this.dir = -1; }
-                if (INPUT_MAP.p2R) { this.vx = moveSpeed; this.dir = 1; }
-            }
-        }
-
-        this.x += this.vx;
-        this.y += this.vy;
-        this.vx *= SETTINGS.WORLD.FRICTION;
-
-        const floor = canvas.height - SETTINGS.WORLD.GROUND_Y;
-        if (this.y < floor) {
-            this.vy += SETTINGS.WORLD.GRAVITY;
-        } else {
-            this.y = floor;
-            this.vy = 0;
-        }
-
-        // Screen Constraints
-        if (this.x < 0) this.x = 0;
-        if (this.x > canvas.width - 40) this.x = canvas.width - 40;
-    }
-
-    handleUniqueTechniques(opp) {
-        // 1. SUKUNA: DISMANTLE LOGIC
-        if (this.name === 'Sukuna' && this.specTimer > 0) {
-            // Spawn slashes every 12 frames during activation
-            if (STATE.frameCounter % 12 === 0) {
-                this.slashes.push({
-                    x: this.x + 20,
-                    y: this.y - 80 + Math.random() * 60,
-                    vx: this.dir * 18,
-                    life: 60
-                });
-            }
-        }
-        
-        this.slashes = this.slashes.filter(s => {
-            s.x += s.vx;
-            s.life--;
-            
-            // Individual Slash Collision
-            let dx = s.x - (opp.x + 20);
-            let dy = s.y - (opp.y - 40);
-            let hit = Math.sqrt(dx*dx + dy*dy) < 45;
-            
-            if (hit && !opp.isShadow) {
-                opp.applyDamage(25, this); // Multi-hit, capped internally
-                return false;
-            }
-            return s.life > 0 && s.x > -100 && s.x < canvas.width + 100;
-        });
-
-        // 2. GOJO: HOLLOW PURPLE LOGIC
-        if (this.hollowPurple.active) {
-            this.hollowPurple.x += this.hollowPurple.vx;
-            let dist = Math.abs(this.hollowPurple.x - (opp.x + 20));
-            if (dist < 65 && Math.abs(this.hollowPurple.y - (opp.y - 45)) < 80) {
-                opp.applyDamage(140, this);
-                this.hollowPurple.active = false;
-            }
-            if (this.hollowPurple.x < -400 || this.hollowPurple.x > canvas.width + 400) {
-                this.hollowPurple.active = false;
-            }
-        }
-
-        // 3. YUTA & RYU: BEAM LOGIC
-        if (this.specTimer > 0 && (this.data.techType === 'LOVE_BEAM' || this.data.techType === 'GRANITE')) {
-            let dist = Math.abs(this.x - opp.x);
-            let isFacing = (this.dir === 1 && opp.x > this.x) || (this.dir === -1 && opp.x < this.x);
-            if (dist < 800 && isFacing && !opp.isShadow) {
-                // DPS Nerf: Low damage per frame
-                opp.hp -= 0.65;
-                opp.stun = 4;
-            }
-        }
-
-        // 4. CHOSO: BLOOD LOGIC
-        if (this.bloodNeedle.active) {
-            this.bloodNeedle.x += this.bloodNeedle.vx;
-            if (Math.abs(this.bloodNeedle.x - (opp.x + 20)) < 50) {
-                opp.applyDamage(110, this);
-                this.bloodNeedle.active = false;
-            }
-            if (this.bloodNeedle.x < -400 || this.bloodNeedle.x > canvas.width + 400) {
-                this.bloodNeedle.active = false;
-            }
-        }
-    }
-
-    // --- COMBAT ACTIONS ---
-    performAttack(opp) {
-        if (this.stun > 0 || this.atkFrame > 0) return;
-        this.atkFrame = 22;
-
-        let strikeDist = Math.abs(this.x - opp.x);
-        if (strikeDist < 100 && !opp.isShadow) {
-            let dmg = this.data.baseDmg;
-            if (this.isShadow) {
-                dmg += 45; // Sneak attack bonus
-                this.isShadow = false;
-            }
-            opp.applyDamage(dmg, this);
-        }
-    }
-
-    performSpecial(opp) {
-        if (this.sp < SETTINGS.STATS.MAX_SP || this.stun > 0) return;
-        this.sp = 0;
-
-        switch (this.data.techType) {
-            case 'PURPLE':
-                this.hollowPurple.active = true;
-                this.hollowPurple.x = this.x + 20;
-                this.hollowPurple.y = this.y - 50;
-                this.hollowPurple.vx = this.dir * 15;
-                break;
-            case 'DISMANTLE':
-                this.specTimer = 115;
-                break;
-            case 'LOVE_BEAM':
-            case 'GRANITE':
-                this.specTimer = 130;
-                break;
-            case 'BLACK_FLASH':
-            case 'HEAVENLY':
-            case 'RESTRICTION':
-                this.vx = this.dir * SETTINGS.STATS.DASH_SPEED;
-                this.specTimer = 25;
-                setTimeout(() => this.performAttack(opp), 60);
-                break;
-            case 'SHADOW':
-                this.isShadow = true;
-                this.shadowClock = 300;
-                break;
-            case 'BLOOD':
-                this.bloodNeedle.active = true;
-                this.bloodNeedle.x = this.x + 20;
-                this.bloodNeedle.y = this.y - 50;
-                this.bloodNeedle.vx = this.dir * 20;
-                break;
-            case 'IDLE_TRANS':
-                let tx = this.x; this.x = opp.x; opp.x = tx;
-                opp.stun = 55;
-                break;
-            case 'CRITICAL':
-                if (Math.abs(this.x - opp.x) < 120) {
-                    opp.applyDamage(148, this);
-                    opp.stun = 70;
-                }
-                break;
-        }
-    }
-
-    // --- RENDERING ENGINE ---
-    draw(ctx) {
+    draw() {
         ctx.save();
-        const cx = this.x + 20;
-        const cy = this.y - 50;
-
-        // Shadow Visibility
-        if (this.isShadow) {
-            ctx.globalAlpha = 0.28;
-            ctx.fillStyle = '#000';
-            ctx.beginPath();
-            ctx.ellipse(cx, this.y, 45, 12, 0, 0, Math.PI * 2);
-            ctx.fill();
-        }
-
-        // Stickman Styling
-        ctx.lineWidth = 5;
-        ctx.lineCap = 'round';
-        ctx.strokeStyle = this.data.color;
-
-        if (this.stun > 0) {
-            ctx.translate((Math.random() - 0.5) * 6, 0);
-        }
-
-        const isMoving = Math.abs(this.vx) > 0.6;
-        const legMotion = isMoving ? Math.sin(STATE.frameCounter * 0.3) * 26 : 0;
-
-        // Head (Small, Sorcerer Style)
-        ctx.beginPath(); ctx.arc(cx, cy - 45, 11, 0, Math.PI * 2); ctx.stroke();
-        // Body
-        ctx.beginPath(); ctx.moveTo(cx, cy - 34); ctx.lineTo(cx, cy + 12); ctx.stroke();
-        // Arms
-        let reach = this.atkFrame > 0 ? 42 : 24;
-        ctx.beginPath(); ctx.moveTo(cx, cy - 25); ctx.lineTo(cx + (this.dir * reach), cy - 5); ctx.stroke();
-        // Legs
-        ctx.beginPath(); ctx.moveTo(cx, cy + 12); ctx.lineTo(cx + legMotion, cy + 50); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(cx, cy + 12); ctx.lineTo(cx - legMotion, cy + 50); ctx.stroke();
-
-        // --- TECHNIQUE VISUALS ---
+        this.frame++;
         
-        // Dismantle (Sukuna)
-        ctx.strokeStyle = '#ff3333'; ctx.lineWidth = 2;
-        this.slashes.forEach(s => {
+        let cx = this.x + 20;
+        let cy = this.y;
+
+        // Apply visual shake if stunned
+        if (this.stun > 0) {
+            ctx.translate(Math.random() * 8 - 4, 0);
+        }
+
+        // --- MEGUMI SHADOW RENDERING ---
+        if (this.inShadow) {
+            // The shadow puddle at feet
+            ctx.fillStyle = 'rgba(0,0,0,0.85)';
             ctx.beginPath();
-            ctx.moveTo(s.x, s.y - 15);
-            ctx.lineTo(s.x + (this.dir * 30), s.y + 15);
-            ctx.stroke();
+            ctx.ellipse(cx, canvas.height - 108, 48, 14, 0, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // The character transparency (Improved visibility as requested)
+            ctx.globalAlpha = 0.35; 
+        }
+
+        // --- RIKA MINION RENDERING ---
+        if (this.rika.active) {
+            ctx.save();
+            ctx.fillStyle = '#666'; 
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = '#000';
+            let rx = this.rika.x;
+            let ry = this.rika.y;
+            
+            // Draw Body - Menacing grey silhouette
+            ctx.beginPath();
+            ctx.ellipse(rx, ry - 75, 30, 105, 0, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Draw Eye - The distinct white gaze
+            ctx.fillStyle = '#fff';
+            ctx.beginPath();
+            ctx.arc(rx + (this.dir * 8), ry - 125, 6, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Punch visual logic
+            if (this.rika.type === 'PUNCH') {
+                ctx.strokeStyle = '#333';
+                ctx.lineWidth = 15;
+                ctx.beginPath();
+                ctx.moveTo(rx, ry - 60);
+                ctx.lineTo(rx + (this.dir * 105), ry - 60);
+                ctx.stroke();
+            }
+            ctx.restore();
+        }
+
+        // --- SPECIAL FX (SUKUNA/RYU/YUTA) ---
+        if (this.fx > 0) {
+            ctx.save();
+            ctx.shadowBlur = 20;
+            ctx.shadowColor = this.s.c;
+            
+            // Sukuna's Cleave/Dismantle Visuals
+            if (this.k === 'Sukuna') {
+                ctx.strokeStyle = '#f00';
+                ctx.lineWidth = 2;
+                for (let i = 0; i < 6; i++) {
+                    ctx.beginPath();
+                    let ox = Math.random() * 190 * this.dir;
+                    ctx.moveTo(cx + ox, cy - 130);
+                    ctx.lineTo(cx + ox + 35, cy + 30);
+                    ctx.stroke();
+                }
+            }
+
+            // Ryu/Yuta Beam Visuals
+            if (this.k === 'Ryu' || this.k === 'Yuta') {
+                ctx.fillStyle = this.s.c;
+                ctx.globalAlpha = 0.6;
+                let bY = this.y - 52;
+                
+                // Beam Clash Logic - Determine if two beams hit each other
+                let clashing = (p1.fx > 0 && p2.fx > 0 && 
+                               (p1.k === 'Ryu' || p1.k === 'Yuta') && 
+                               (p2.k === 'Ryu' || p2.k === 'Yuta') && 
+                               Math.abs(p1.y - p2.y) < 55);
+                               
+                let bLen = clashing ? Math.abs(canvas.width / 2 - cx) : 2500;
+                ctx.fillRect(cx, bY, bLen * this.dir, 38);
+                
+                // Draw collision orb if clashing
+                if (clashing) {
+                    ctx.globalAlpha = 1;
+                    ctx.fillStyle = "#fff";
+                    ctx.beginPath();
+                    ctx.arc(canvas.width / 2, bY + 19, 30 + Math.random() * 20, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+            ctx.restore();
+        }
+
+        // --- SUMMONS DRAWING (GETO) ---
+        this.getoProjs.forEach(p => {
+            ctx.fillStyle = '#f00';
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = '#000';
+            ctx.fillRect(p.x - 22, p.y - 12, 44, 24);
         });
 
-        // Hollow Purple (Gojo)
-        if (this.hollowPurple.active) {
-            ctx.fillStyle = '#aa00ff'; ctx.shadowBlur = 40; ctx.shadowColor = '#aa00ff';
-            ctx.beginPath(); ctx.arc(this.hollowPurple.x, this.hollowPurple.y, 35, 0, Math.PI * 2); ctx.fill();
+        // --- UNIVERSAL PROJECTILES ---
+        if (this.proj.active) {
+            ctx.save();
+            ctx.fillStyle = (this.k === 'Gojo') ? '#a0f' : this.s.c;
+            ctx.shadowBlur = 25;
+            ctx.shadowColor = ctx.fillStyle;
+            
+            if (this.proj.type === 'NAIL') {
+                ctx.fillRect(this.proj.x, this.proj.y - 40, 26 * this.dir, 7);
+            } else {
+                ctx.beginPath();
+                let sz = (this.proj.type === 'PURPLE') ? 55 : 22;
+                ctx.arc(this.proj.x, this.proj.y - 40, sz, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            ctx.restore();
         }
 
-        // Beams (Ryu/Yuta)
-        if (this.specTimer > 0 && (this.data.techType === 'LOVE_BEAM' || this.data.techType === 'GRANITE')) {
-            let beamGrad = ctx.createLinearGradient(cx, cy, cx + (1200 * this.dir), cy);
-            beamGrad.addColorStop(0, this.data.color);
-            beamGrad.addColorStop(1, 'rgba(0,0,0,0)');
-            ctx.fillStyle = beamGrad;
-            ctx.globalAlpha = SETTINGS.VISUALS.BEAM_ALPHA;
-            ctx.fillRect(cx, cy - 30, 1200 * this.dir, 60);
-        }
+        // --- CHARACTER RENDERING (STICK FIGURE CORE) ---
+        ctx.strokeStyle = (this.jackpot > 0) ? '#0f0' : this.s.c;
+        ctx.lineWidth = 4;
+        
+        // Status effect colors
+        if (this.poison > 0) ctx.strokeStyle = '#a0f';
+        if (this.silence > 0) ctx.strokeStyle = '#444';
 
-        // Blood Needle (Choso)
-        if (this.bloodNeedle.active) {
-            ctx.fillStyle = '#8b0000';
-            ctx.beginPath();
-            ctx.moveTo(this.bloodNeedle.x, this.bloodNeedle.y);
-            ctx.lineTo(this.bloodNeedle.x - (this.dir * 40), this.bloodNeedle.y - 6);
-            ctx.lineTo(this.bloodNeedle.x - (this.dir * 40), this.bloodNeedle.y + 6);
-            ctx.fill();
-        }
-
+        // Head
+        ctx.beginPath(); 
+        ctx.arc(cx, cy - 85, 15, 0, Math.PI * 2); 
+        ctx.stroke(); 
+        // Torso
+        ctx.beginPath(); 
+        ctx.moveTo(cx, cy - 70); 
+        ctx.lineTo(cx, cy - 30); 
+        ctx.stroke(); 
+        // Arms logic
+        let armY = (this.m1T > 0 || this.fx > 0) ? cy - 40 : cy - 60;
+        ctx.beginPath(); 
+        ctx.moveTo(cx, cy - 65); 
+        ctx.lineTo(cx + (this.dir * 32), armY); 
+        ctx.stroke();
+        ctx.beginPath(); 
+        ctx.moveTo(cx, cy - 65); 
+        ctx.lineTo(cx - (this.dir * 22), cy - 50); 
+        ctx.stroke();
+        // Legs logic (Walk animation)
+        let legW = (Math.abs(this.vx) > 0.2) ? Math.sin(this.frame * 0.25) * 18 : 10;
+        ctx.beginPath(); 
+        ctx.moveTo(cx, cy - 30); 
+        ctx.lineTo(cx + legW, cy); 
+        ctx.stroke(); 
+        ctx.beginPath(); 
+        ctx.moveTo(cx, cy - 30); 
+        ctx.lineTo(cx - legW, cy); 
+        ctx.stroke();
+        
         ctx.restore();
     }
 
-    handleAiLogic(opp) {
-        let distance = Math.abs(this.x - opp.x);
-        this.dir = (opp.x < this.x) ? -1 : 1;
+    spec(opp) {
+        if (this.spT > 0 || this.stun > 0 || this.silence > 0) return;
+        
+        // Cooldown starts IMMEDIATELY upon execution
+        this.spT = 450; 
+        
+        switch(this.k) {
+            case 'Nobara': 
+                this.proj = { active: true, x: this.x, y: this.y, vx: this.dir * 26, type: 'NAIL' }; 
+                break;
+            case 'Hakari': 
+                // Jackpot check: 33% chance
+                if (Math.random() < 0.33) {
+                    this.jackpot = 650;
+                }
+                this.spT = 420; 
+                break;
+            case 'Gojo': 
+                this.proj = { active: true, x: this.x, y: this.y, vx: this.dir * 9, type: 'PURPLE' }; 
+                this.spT = 650; 
+                break;
+            case 'Sukuna': 
+                this.fx = 55; this.spT = 480; 
+                break;
+            case 'Itadori': 
+                this.vx = this.dir * 45; this.fx = 28; this.spT = 520; 
+                break;
+            case 'Todo': 
+                let tX = this.x; this.x = opp.x; opp.x = tX; 
+                opp.stun = 50; this.spT = 550; 
+                break;
+            case 'Choso': 
+                this.proj = { active: true, x: this.x, y: this.y, vx: this.dir * 32, type: 'BLOOD' }; 
+                this.spT = 450; 
+                break;
+            case 'Nanami': 
+                this.vx = this.dir * 38; this.fx = 22; this.spT = 500; 
+                break;
+            case 'Megumi': 
+                this.inShadow = true; 
+                this.shadowTimer = 180; // Hard cap of 3 seconds
+                this.spT = 650; 
+                break;
+            case 'Naoya': 
+                this.vx = this.dir * 65; this.fx = 42; this.spT = 550; 
+                break;
+            case 'Geto': 
+                this.getoProjs = [
+                    {x:this.x, y:this.y-95, vx:this.dir*9.5},
+                    {x:this.x, y:this.y-50, vx:this.dir*9.5},
+                    {x:this.x, y:this.y, vx:this.dir*9.5}
+                ]; 
+                this.spT = 580; 
+                break;
+            case 'Ryu': 
+                this.fx = 140; 
+                this.spT = (opp.k === 'Yuta') ? 480 : 950; 
+                break;
+            case 'Yuta': 
+                this.spT = 650; 
+                if (opp.k === 'Ryu') {
+                    this.fx = 140; 
+                    this.rika = { active: true, x: this.x - (this.dir * 75), y: this.y, frame: 140, type: 'BEAM' };
+                } else {
+                    this.rika = { active: true, x: this.x + (this.dir * 50), y: this.y, frame: 65, type: 'PUNCH' };
+                }
+                break;
+            case 'Toji': 
+            case 'Maki': 
+                this.vx = this.dir * 55; this.fx = 32; this.spT = 450; 
+                break;
+        }
+    }
 
-        if (distance > 125) {
-            this.vx = (opp.x < this.x ? -this.data.speed : this.data.speed) * 0.75;
-        } else {
-            if (Math.random() < 0.05) this.performAttack(opp);
+    update(opp) {
+        if (!active || paused) return;
+
+        // Process Poison / Bleed
+        if (this.poison > 0) { 
+            this.poison--; 
+            if (this.poison % 60 === 0) this.hp -= 4.5; 
         }
 
-        if (this.sp >= SETTINGS.STATS.MAX_SP && Math.random() < 0.02) {
-            this.performSpecial(opp);
+        // Megumi 3-Second Rule Enforcement
+        if (this.inShadow) {
+            this.shadowTimer--;
+            if (this.shadowTimer <= 0) {
+                this.inShadow = false;
+            }
+        }
+
+        // Process Rika Minion
+        if (this.rika.active) {
+            this.rika.frame--;
+            if (this.rika.type === 'PUNCH' && !opp.inShadow) {
+                let punchRange = Math.abs(this.rika.x - opp.x);
+                if (punchRange < 100) { 
+                    opp.hp -= 52; opp.stun = 120; opp.vx = this.dir * 32; 
+                }
+            } else { 
+                this.rika.x = this.x - (this.dir * 75); 
+                this.rika.y = this.y; 
+            }
+            if (this.rika.frame <= 0) this.rika.active = false;
+        }
+
+        // Geto Projectile Logic
+        this.getoProjs = this.getoProjs.filter(p => {
+            p.x += p.vx;
+            let hitTarget = Math.abs(p.x - (opp.x + 20)) < 48 && Math.abs(p.y - (opp.y - 45)) < 80;
+            if (hitTarget && !opp.inShadow) {
+                opp.hp -= 32; opp.stun = 28; return false;
+            }
+            return p.x > -200 && p.x < canvas.width + 200;
+        });
+
+        // Effect & Beam Damage Logic
+        let isBeaming = (this.fx > 0 && (this.k === 'Ryu' || this.k === 'Yuta'));
+        if (this.fx > 0) {
+            this.fx--;
+            if (!opp.inShadow) {
+                let d = Math.abs(this.x - opp.x);
+                if (this.k === 'Sukuna' && d < 210) { opp.hp -= 3.5; opp.stun = 5; }
+                if (this.k === 'Itadori' && d < 85) { opp.hp -= 85; opp.stun = 55; this.fx = 0; }
+                if (this.k === 'Naoya' && d < 95) { opp.stun = 110; this.fx = 0; }
+                if (this.k === 'Nanami' && d < 90) { opp.hp -= 65; opp.silence = 250; this.fx = 0; }
+                if ((this.k === 'Toji' || this.k === 'Maki') && d < 115) { 
+                    opp.hp -= 8; opp.stun = 18; opp.vx = this.dir * 32; 
+                }
+                
+                // Beam specific collision
+                if (isBeaming) {
+                    let vMatch = Math.abs((this.y - 35) - (opp.y - 45)) < 70;
+                    let frontal = (this.dir === 1) ? (opp.x > this.x) : (opp.x < this.x);
+                    let inRange = (opp.x + 20) > Math.min(this.x, this.x + (this.dir * 2500)) && (opp.x + 20) < Math.max(this.x, this.x + (this.dir * 2500));
+                    let clash = (p1.fx > 0 && p2.fx > 0 && 
+                                (p1.k === 'Ryu' || p1.k === 'Yuta') && 
+                                (p2.k === 'Ryu' || p2.k === 'Yuta') && 
+                                Math.abs(p1.y - p2.y) < 60);
+                    if (vMatch && frontal && inRange && !clash) { opp.hp -= 1.75; opp.stun = 5; }
+                }
+            }
+        }
+
+        // Universal Projectile Collision
+        if (this.proj.active) {
+            this.proj.x += this.proj.vx;
+            let pDistX = Math.abs(this.proj.x - (opp.x + 20));
+            let pDistY = Math.abs(this.proj.y - 40 - (opp.y - 45));
+            if (pDistX < 75 && pDistY < 115 && !opp.inShadow) {
+                if (this.proj.type === 'NAIL') { opp.hp -= 42; opp.stun = 145; }
+                else if (this.proj.type === 'PURPLE') { opp.hp -= 100; opp.stun = 90; }
+                else if (this.proj.type === 'BLOOD') { opp.hp -= 38; opp.poison = 260; }
+                this.proj.active = false;
+            }
+            if (this.proj.x < -600 || this.proj.x > canvas.width + 600) this.proj.active = false;
+        }
+
+        // Physical Engine
+        if (isBeaming) {
+            this.vx = 0; this.vy = 0;
+        } else if (this.stun <= 0) {
+            let speedMod = this.inShadow ? 1.75 : 1.0;
+            let moveSpd = this.s.s * speedMod;
+            
+            if (this.pNum === 1) {
+                if (held.p1L) { this.vx = -moveSpd; this.dir = -1; }
+                if (held.p1R) { this.vx = moveSpd; this.dir = 1; }
+            } else if (!this.cpu) {
+                if (held.p2L) { this.vx = -moveSpd; this.dir = -1; }
+                if (held.p2R) { this.vx = moveSpd; this.dir = 1; }
+            }
+        }
+
+        // Apply velocities
+        this.x += this.vx; this.y += this.vy;
+        this.vx *= 0.83; // Friction
+        
+        // Wall Constraints
+        if (this.x < 0) this.x = 0;
+        if (this.x > canvas.width - 50) this.x = canvas.width - 50;
+
+        // Floor Logic & Gravity
+        let ground = canvas.height - 110;
+        if (!isBeaming) {
+            if (this.y < ground) {
+                this.vy += 0.95;
+            } else { 
+                this.y = ground; 
+                this.vy = 0; 
+            }
+        }
+
+        // Timer Decrements
+        if (this.jackpot > 0) {
+            this.jackpot--;
+            if (this.hp < 300) this.hp += 0.8; 
+        }
+        if (this.stun > 0) this.stun--;
+        if (this.spT > 0) this.spT--;
+        if (this.m1T > 0) this.m1T--;
+        if (this.silence > 0) this.silence--;
+
+        // AI Tick Logic
+        if (this.cpu) this.ai(opp);
+    }
+
+    atk(opp) {
+        if (this.stun > 0 || this.m1T > 0 || this.silence > 0 || (this.fx > 0 && (this.k === 'Ryu' || this.k === 'Yuta'))) return;
+        this.m1T = 20;
+        let distH = Math.abs(this.x - opp.x);
+        let distV = Math.abs(this.y - opp.y);
+        
+        if (distH < 100 && distV < 120 && !opp.inShadow) {
+            if (this.inShadow) { 
+                opp.hp -= (this.s.d + 30); opp.stun = 80; this.inShadow = false; 
+            } else { 
+                opp.hp -= this.s.d; opp.stun = 18; 
+            }
+            opp.vx = this.dir * 9;
+        } else if (this.inShadow) {
+            this.inShadow = false;
+        }
+    }
+
+    ai(opp) {
+        if (this.stun > 0 || (this.fx > 0 && (this.k === 'Ryu' || this.k === 'Yuta'))) return;
+        
+        let d = Math.abs(this.x - opp.x);
+        // Correct facing direction
+        this.dir = (opp.x < this.x) ? -1 : 1;
+
+        // Tracking logic
+        if (d > 165) {
+            this.vx = (opp.x < this.x) ? -this.s.s : this.s.s;
+        } else if (d < 50) {
+            this.vx = (opp.x < this.x) ? this.s.s : -this.s.s;
+        }
+
+        // Intelligent Jumping (Evasion)
+        if (this.y >= canvas.height - 110) {
+            let needsJump = (opp.y < this.y - 80) || (opp.proj.active && Math.abs(opp.proj.x - this.x) < 260);
+            if (needsJump && Math.random() < 0.25) {
+                this.vy = -20;
+            }
+        }
+
+        // Combat triggers
+        if (d < 118 && Math.random() < 0.13) {
+            this.atk(opp);
+        }
+        
+        // Special Ability triggers
+        if (this.spT === 0 && Math.random() < 0.03) {
+            this.spec(opp);
         }
     }
 }
 
-// --- SECTION 6: SYSTEM CONTROLLERS ---
+// PC KEYBOARD INPUT LISTENERS
+window.addEventListener('keydown', e => {
+    if (!active || paused) return;
+    
+    // Player 1: WASD / F (Atk) / G (Spec)
+    if (e.code === 'KeyA') held.p1L = true;
+    if (e.code === 'KeyD') held.p1R = true;
+    if (e.code === 'KeyW' && p1.vy === 0) p1.vy = -20;
+    if (e.code === 'KeyF') p1.atk(p2);
+    if (e.code === 'KeyG') p1.spec(p2);
 
-function initMode(mode) {
-    STATE.gameMode = mode;
-    STATE.selectionTurn = 1;
+    // Player 2: Arrows / K (Atk) / L (Spec)
+    if (e.code === 'ArrowLeft') held.p2L = true;
+    if (e.code === 'ArrowRight') held.p2R = true;
+    if (e.code === 'ArrowUp' && p2.vy === 0) p2.vy = -20;
+    if (e.code === 'KeyK') p2.atk(p1);
+    if (e.code === 'KeyL') p2.spec(p1);
+    
+    if (e.code === 'Escape') togglePause();
+});
+
+window.addEventListener('keyup', e => {
+    if (e.code === 'KeyA') held.p1L = false;
+    if (e.code === 'KeyD') held.p1R = false;
+    if (e.code === 'ArrowLeft') held.p2L = false;
+    if (e.code === 'ArrowRight') held.p2R = false;
+});
+
+// Menu Navigation System
+function initMode(m) {
+    mode = m; p1C = null; p2C = null;
     document.getElementById('m-start').style.display = 'none';
     document.getElementById('m-char').style.display = 'block';
-    populateSelectionGrid();
-}
-
-function populateSelectionGrid() {
-    const grid = document.getElementById('char-grid');
-    const header = document.getElementById('selection-title');
-    header.innerText = `PLAYER ${STATE.selectionTurn} SELECT`;
+    updateDisplayTitle();
     
-    grid.innerHTML = '';
-    Object.keys(SORCERERS).forEach(name => {
-        const btn = document.createElement('button');
-        btn.className = 'char-btn';
-        btn.innerHTML = `<strong>${name.toUpperCase()}</strong>`;
-        
-        btn.onpointerdown = (e) => {
-            e.stopPropagation();
-            if (STATE.selectionTurn === 1) {
-                STATE.p1Name = name;
-                if (STATE.gameMode === '1P') {
-                    const keys = Object.keys(SORCERERS);
-                    STATE.p2Name = keys[Math.floor(Math.random() * keys.length)];
-                    startGame();
-                } else {
-                    STATE.selectionTurn = 2;
-                    populateSelectionGrid();
-                }
-            } else {
-                STATE.p2Name = name;
-                startGame();
+    const container = document.getElementById('char-grid');
+    container.innerHTML = '';
+    
+    Object.keys(chars).forEach(name => {
+        const charBtn = document.createElement('button');
+        charBtn.innerText = name;
+        charBtn.onpointerdown = (ev) => {
+            ev.stopPropagation();
+            if (!p1C) { 
+                p1C = name; 
+                if (mode === '1P') { 
+                    const list = Object.keys(chars);
+                    p2C = list[Math.floor(Math.random() * list.length)]; 
+                    beginGameSession(); 
+                } else updateDisplayTitle(); 
+            } else if (mode === '2P' && !p2C) { 
+                p2C = name; 
+                beginGameSession(); 
             }
         };
-        grid.appendChild(btn);
+        container.appendChild(charBtn);
     });
 }
 
-function startGame() {
+function updateDisplayTitle() {
+    const title = document.getElementById('selection-title');
+    if (!p1C) { 
+        title.innerText = "PLAYER 1: SELECT YOUR SORCERER"; 
+        title.style.color = "#0af"; 
+    } else { 
+        title.innerText = "PLAYER 2: SELECT YOUR SORCERER"; 
+        title.style.color = "#f33"; 
+    }
+}
+
+function beginGameSession() {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
     
-    STATE.p1 = new Sorcerer(canvas.width * 0.2, canvas.height - 200, STATE.p1Name, 1, false);
-    STATE.p2 = new Sorcerer(canvas.width * 0.7, canvas.height - 200, STATE.p2Name, 2, (STATE.gameMode === '1P'));
+    p1 = new Sorcerer(150, canvas.height - 110, p1C, 1, false);
+    p2 = new Sorcerer(canvas.width - 250, canvas.height - 110, p2C, 2, (mode === '1P'));
     
     document.getElementById('menu').classList.remove('active-menu');
+    document.getElementById('pause-btn').style.display = 'block';
     document.getElementById('controls').style.display = 'block';
-    if (STATE.gameMode === '2P') document.getElementById('p2-pad').style.display = 'grid';
     
-    STATE.isRunning = true;
-    requestAnimationFrame(engineLoop);
+    if (mode === '2P') {
+        document.getElementById('p2-pad').style.display = 'block';
+    }
+    
+    active = true;
+    requestAnimationFrame(mainLoop);
 }
 
-function engineLoop() {
-    if (!STATE.isRunning || STATE.isPaused) return;
+function mainLoop() {
+    if (!active) return;
+    
+    if (!paused) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        // Logical Update
+        p1.update(p2);
+        p2.update(p1);
+        
+        // Graphical Draw
+        p1.draw();
+        p2.draw();
+        
+        // Interface Synchronization
+        syncInterface();
 
-    STATE.frameCounter++;
-    ctx.save();
-
-    // Screen Shake Processing
-    if (STATE.shakeIntensity > 0.1) {
-        ctx.translate((Math.random() - 0.5) * STATE.shakeIntensity, (Math.random() - 0.5) * STATE.shakeIntensity);
-        STATE.shakeIntensity *= SETTINGS.VISUALS.SHAKE_RECOVERY;
+        if (p1.hp <= 0 || p2.hp <= 0) {
+            active = false;
+            triggerEndScreen(p1.hp <= 0 ? "PLAYER 2" : "PLAYER 1");
+        }
     }
+    requestAnimationFrame(mainLoop);
+}
 
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+function syncInterface() {
+    document.getElementById('p1-hp').style.width = (p1.hp / 3) + '%';
+    document.getElementById('p1-cd').style.width = ((450 - p1.spT) / 4.5) + '%';
+    document.getElementById('p1-stun').innerText = p1.stun > 0 ? "STUNNED" : (p1.silence > 0 ? "SILENCED" : "");
+    
+    document.getElementById('p2-hp').style.width = (p2.hp / 3) + '%';
+    document.getElementById('p2-cd').style.width = ((450 - p2.spT) / 4.5) + '%';
+    document.getElementById('p2-stun').innerText = p2.stun > 0 ? "STUNNED" : (p2.silence > 0 ? "SILENCED" : "");
+}
 
-    // VFX Processing
-    STATE.particles = STATE.particles.filter(p => {
-        p.update();
-        p.draw(ctx);
-        return p.alpha > 0;
+function triggerEndScreen(winner) {
+    const endBox = document.getElementById('win-screen');
+    const endText = document.getElementById('win-text');
+    endText.innerText = winner + " WINS"; 
+    endText.style.color = (winner === "PLAYER 1") ? "#0af" : "#f33";
+    endBox.classList.add('active-menu');
+}
+
+function togglePause() {
+    if (!active) return;
+    paused = !paused;
+    const overlay = document.getElementById('pause-screen');
+    if (paused) {
+        overlay.classList.add('active-menu');
+    } else {
+        overlay.classList.remove('active-menu');
+    }
+}
+
+// Touch Event Infrastructure
+window.addEventListener('touchstart', event => {
+    if (event.target.tagName !== 'BUTTON') event.preventDefault();
+    [...event.touches].forEach(t => {
+        const el = document.elementFromPoint(t.clientX, t.clientY);
+        if (!el || !el.dataset.v) return;
+        
+        const owner = el.dataset.p;
+        const self = (owner === '1') ? p1 : p2;
+        const enemy = (owner === '1') ? p2 : p1;
+        const beamLock = (self.fx > 0 && (self.k === 'Ryu' || self.k === 'Yuta'));
+        
+        if (el.dataset.v === 'l') held['p' + owner + 'L'] = true;
+        if (el.dataset.v === 'r') held['p' + owner + 'R'] = true;
+        if (el.dataset.v === 'u' && self.vy === 0 && !beamLock) self.vy = -20;
+        if (el.dataset.v === 'a') self.atk(enemy);
+        if (el.dataset.v === 's') self.spec(enemy);
     });
+}, { passive: false });
 
-    // Character State Updates
-    STATE.p1.update(STATE.p2);
-    STATE.p2.update(STATE.p1);
-
-    // Render Characters
-    STATE.p1.draw(ctx);
-    STATE.p2.draw(ctx);
-
-    updateUI();
-    checkWinCondition();
-
-    ctx.restore();
-    requestAnimationFrame(engineLoop);
-}
-
-function updateUI() {
-    document.getElementById('p1-hp').style.width = (STATE.p1.hp / 3) + '%';
-    document.getElementById('p1-cd').style.width = (STATE.p1.sp / 6) + '%';
-    document.getElementById('p2-hp').style.width = (STATE.p2.hp / 3) + '%';
-    document.getElementById('p2-cd').style.width = (STATE.p2.sp / 6) + '%';
-}
-
-function checkWinCondition() {
-    if (STATE.p1.hp <= 0 || STATE.p2.hp <= 0) {
-        STATE.isRunning = false;
-        const screen = document.getElementById('win-screen');
-        const text = document.getElementById('win-text');
-        screen.classList.add('active-menu');
-        text.innerText = (STATE.p1.hp <= 0) ? "P2 WINS" : "P1 WINS";
-    }
-}
-
-// --- SECTION 7: INPUT INTERFACE ---
-
-window.addEventListener('pointerdown', (e) => {
-    const action = e.target.dataset.v;
-    const pId = e.target.dataset.p;
-    if (!action || !pId) return;
-
-    const actor = (pId === '1') ? STATE.p1 : STATE.p2;
-    const foe = (pId === '1') ? STATE.p2 : STATE.p1;
-
-    switch(action) {
-        case 'l': INPUT_MAP[`p${pId}L`] = true; break;
-        case 'r': INPUT_MAP[`p${pId}R`] = true; break;
-        case 'u': if (actor.vy === 0) actor.vy = -27; break;
-        case 'a': actor.performAttack(foe); break;
-        case 's': actor.performSpecial(foe); break;
-    }
+window.addEventListener('touchend', event => {
+    // Reset inputs, then recalculate from remaining touches
+    held.p1L = held.p1R = held.p2L = held.p2R = false;
+    [...event.touches].forEach(t => {
+        const el = document.elementFromPoint(t.clientX, t.clientY);
+        if (el && el.dataset.v === 'l') held['p' + el.dataset.p + 'L'] = true;
+        if (el && el.dataset.v === 'r') held['p' + el.dataset.p + 'R'] = true;
+    });
 });
 
-window.addEventListener('pointerup', (e) => {
-    const action = e.target.dataset.v;
-    const pId = e.target.dataset.p;
-    if (action === 'l') INPUT_MAP[`p${pId}L`] = false;
-    if (action === 'r') INPUT_MAP[`p${pId}R`] = false;
-});
-
-// Keyboard Fallback
-window.addEventListener('keydown', (e) => {
-    if (e.code === 'KeyA') INPUT_MAP.p1L = true;
-    if (e.code === 'KeyD') INPUT_MAP.p1R = true;
-    if (e.code === 'KeyW' && STATE.p1.vy === 0) STATE.p1.vy = -27;
-});
-
-window.addEventListener('keyup', (e) => {
-    if (e.code === 'KeyA') INPUT_MAP.p1L = false;
-    if (e.code === 'KeyD') INPUT_MAP.p1R = false;
-});
-
-// Window Resize Handling
-window.addEventListener('resize', () => {
-    if (STATE.isRunning) {
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight;
-    }
-});
-
-/** * END OF ENGINE - VERIFIED 700+ LINES 
- * SECURITY: NO ONE-SHOTS (50% DMG CAP)
- * SUKUNA: DISMANTLE PROJECTILES RE-IMPLEMENTED
- */
+window.onresize = () => {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+};
