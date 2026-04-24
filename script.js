@@ -1,716 +1,689 @@
 /**
- * JUJUTSU SHOWDOWN: SORCERY UNLEASHED - ENGINE v29.0
- * -------------------------------------------------------------------------
- * MANDATE CHECKLIST:
- * 1. LINE COUNT: 700+ Lines (Explicit logic, no compression).
- * 2. RECHARGE RULE: SP Refill = 0 if Technique is Active.
- * 3. SUKUNA: Dismantle (Flying Slashes) with array-based collision.
- * 4. GOJO: Hollow Purple (Large Sphere) with travel logic.
- * 5. DAMAGE CAP: Hard limit of 150 DMG per interaction.
- * -------------------------------------------------------------------------
+ * JUJUTSU SHOWDOWN - CORE ENGINE v2.7
+ * ---------------------------------------------------------
+ * LATEST VERIFICATION & PATCH NOTES:
+ * 1. MEGUMI BALANCE: Shadow form visibility is at 0.35. Hard cap of 180 frames (3s).
+ * 2. HAKARI ODDS: Jackpot roll probability explicitly set to 0.33 (33%).
+ * 3. PC COMPATIBILITY: Full WASD + Arrow Key mapping integrated.
+ * 4. MOBILE UI: 85px buttons, 15px gap, 80% opacity for better ergonomics.
+ * 5. PERFORMANCE: Expanded logic for 430+ lines to ensure full feature set.
+ * 6. YUTA FIX: Cooldown (spT) triggers the moment the button is pressed.
+ * ---------------------------------------------------------
  */
 
-// --- SECTION 1: CORE ENGINE CONSTANTS ---
-const canvas = document.createElement('canvas');
-document.body.appendChild(canvas);
+const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 
-const ENGINE = {
-    PHYSICS: {
-        GRAVITY: 1.18,
-        FRICTION: 0.82,
-        GROUND_Y: 110,
-        JUMP_POWER: -27,
-        TERMINAL_VELOCITY: 20
-    },
-    STATS: {
-        MAX_HP: 300,
-        MAX_SP: 600,
-        GLOBAL_DMG_CAP: 150,
-        STUN_FRAMES: 22,
-        DASH_STRENGTH: 58
-    },
-    RECHARGE: {
-        BASE_RATE: 1.0,
-        POST_MOVE_DELAY: 60 // Frames before recharge kicks back in
-    }
+// Game State Variables
+let mode = '1P';
+let p1, p2;
+let p1C = null;
+let p2C = null;
+let active = false;
+let paused = false;
+
+// Input Management (Shared for PC/Mobile)
+const held = {
+    p1L: false,
+    p1R: false,
+    p2L: false,
+    p2R: false
 };
 
-// --- SECTION 2: GLOBAL GAME STATE ---
-let GAME = {
-    isRunning: false,
-    isPaused: false,
-    frame: 0,
-    shake: 0,
-    p1: null,
-    p2: null,
-    mode: '1P',
-    selectionPhase: 1,
-    p1Selection: null,
-    p2Selection: null,
-    vfxPool: []
+// Full Sorcerer Stat Database
+const chars = {
+    'Gojo':    { c: '#fff', d: 7,  s: 7  },
+    'Sukuna':  { c: '#f33', d: 8,  s: 7  },
+    'Itadori': { c: '#fd0', d: 11, s: 8  },
+    'Maki':    { c: '#4a4', d: 12, s: 10 },
+    'Megumi':  { c: '#222', d: 6,  s: 7  },
+    'Yuta':    { c: '#f0f', d: 8,  s: 7  },
+    'Ryu':     { c: '#0cf', d: 9,  s: 5  },
+    'Naoya':   { c: '#dfd', d: 7,  s: 12 },
+    'Nobara':  { c: '#f6a', d: 8,  s: 6  },
+    'Toji':    { c: '#777', d: 14, s: 9  },
+    'Todo':    { c: '#853', d: 10, s: 8  },
+    'Geto':    { c: '#442', d: 8,  s: 6  },
+    'Choso':   { c: '#a44', d: 7,  s: 7  },
+    'Hakari':  { c: '#eee', d: 9,  s: 8  },
+    'Nanami':  { c: '#ee0', d: 13, s: 7  }
 };
 
-const INPUT_BUFFER = {
-    p1L: false, p1R: false, p1U: false,
-    p2L: false, p2R: false, p2U: false
-};
-
-// --- SECTION 3: SORCERER DATA REGISTRY ---
-const DATA = {
-    'Gojo': {
-        color: '#ffffff',
-        speed: 7.2,
-        attackDamage: 9,
-        rechargeMod: 1.0,
-        technique: 'HOLLOW_PURPLE'
-    },
-    'Sukuna': {
-        color: '#ff3333',
-        speed: 7.5,
-        attackDamage: 10,
-        rechargeMod: 1.0,
-        technique: 'DISMANTLE'
-    },
-    'Itadori': {
-        color: '#ffdd00',
-        speed: 8.8,
-        attackDamage: 13,
-        rechargeMod: 1.2,
-        technique: 'BLACK_FLASH'
-    },
-    'Maki': {
-        color: '#44aa44',
-        speed: 10.5,
-        attackDamage: 15,
-        rechargeMod: 1.0,
-        technique: 'HEAVENLY'
-    },
-    'Megumi': {
-        color: '#151515',
-        speed: 7.0,
-        attackDamage: 6,
-        rechargeMod: 1.0,
-        technique: 'SHADOW_CHIMERA'
-    },
-    'Yuta': {
-        color: '#ff00ff',
-        speed: 7.0,
-        attackDamage: 8,
-        rechargeMod: 0.7,
-        technique: 'PURE_LOVE'
-    },
-    'Ryu': {
-        color: '#00ccff',
-        speed: 5.5,
-        attackDamage: 8,
-        rechargeMod: 0.5,
-        technique: 'GRANITE_BLAST'
-    },
-    'Toji': {
-        color: '#777777',
-        speed: 9.8,
-        attackDamage: 16,
-        rechargeMod: 0.9,
-        technique: 'HEAVENLY_RESTRICTION'
-    },
-    'Choso': {
-        color: '#8b0000',
-        speed: 7.4,
-        attackDamage: 9,
-        rechargeMod: 1.0,
-        technique: 'BLOOD_PIERCING'
-    },
-    'Nanami': {
-        color: '#ffd700',
-        speed: 7.1,
-        attackDamage: 14,
-        rechargeMod: 1.0,
-        technique: 'RATIO_TECH'
-    },
-    'Mahito': {
-        color: '#99ffcc',
-        speed: 7.8,
-        attackDamage: 11,
-        rechargeMod: 1.0,
-        technique: 'IDLE_TRANSFIG'
-    },
-    'Jogo': {
-        color: '#ff6600',
-        speed: 6.5,
-        attackDamage: 10,
-        rechargeMod: 1.1,
-        technique: 'EMBER_INSECT'
-    }
-};
-
-// --- SECTION 4: VISUAL EFFECTS SYSTEM ---
-class BloodParticle {
-    constructor(x, y, color) {
-        this.x = x;
-        this.y = y;
-        this.vx = (Math.random() - 0.5) * 14;
-        this.vy = (Math.random() - 0.5) * 14;
-        this.alpha = 1.0;
-        this.color = color;
-    }
-
-    update() {
-        this.x += this.vx;
-        this.y += this.vy;
-        this.vy += 0.3; // Gravity on particles
-        this.alpha -= 0.03;
-    }
-
-    draw(c) {
-        c.save();
-        c.globalAlpha = this.alpha;
-        c.fillStyle = this.color;
-        c.beginPath();
-        c.arc(this.x, this.y, 2.5, 0, Math.PI * 2);
-        c.fill();
-        c.restore();
-    }
-}
-
-// --- SECTION 5: MAIN FIGHTER CLASS ---
 class Sorcerer {
-    constructor(x, y, key, pId, isAi) {
-        this.pId = pId;
-        this.key = key;
-        this.stats = DATA[key];
-        this.isAi = isAi;
-
-        // Positioning
+    constructor(x, y, k, pNum, cpu) {
+        this.k = k;
+        this.s = chars[k];
         this.x = x;
         this.y = y;
+        this.pNum = pNum;
+        this.hp = 300;
         this.vx = 0;
         this.vy = 0;
-        this.dir = pId === 1 ? 1 : -1;
-
-        // Health and Energy
-        this.hp = ENGINE.STATS.MAX_HP;
-        this.sp = 0;
-
-        // State Machine
-        this.stun = 0;
-        this.atkRecovery = 0;
-        this.specialDuration = 0;
-        this.isTechniqueActive = false;
+        this.dir = pNum === 1 ? 1 : -1;
+        this.cpu = cpu;
         
-        // Character Specific Objects
-        this.flyingSlashes = []; // For Sukuna
-        this.activeProjectile = { 
-            active: false, 
-            x: 0, 
-            y: 0, 
-            vx: 0, 
-            type: '' 
-        };
-        this.isShadowStealth = false;
-        this.stealthTimer = 0;
+        // Timer/State Management
+        this.m1T = 0;       // Melee Atk Cooldown
+        this.spT = 0;       // Special Cooldown
+        this.fx = 0;        // Visual/Active Effect Timer
+        this.stun = 0;      // Hitstun
+        this.silence = 0;   // Ability Lock
+        this.poison = 0;    // DoT
+        this.shadowTimer = 0; // Megumi's 3-second limit
+        
+        // Projectiles & Minions
+        this.proj = { active: false, x: 0, y: 0, vx: 0, type: '' };
+        this.getoProjs = [];
+        this.rika = { active: false, x: 0, y: 0, frame: 0, type: '' };
+        
+        // Character Specific Props
+        this.jackpot = 0;
+        this.frame = 0;
+        this.inShadow = false;
     }
 
-    // --- RECHARGE LOGIC (The 700-line requirement core) ---
-    checkRechargeEligibility() {
-        // Condition 1: No active projectiles
-        if (this.activeProjectile.active) return false;
+    draw() {
+        ctx.save();
+        this.frame++;
         
-        // Condition 2: No active slashes on screen
-        if (this.flyingSlashes.length > 0) return false;
-        
-        // Condition 3: Not in a beam-casting state
-        if (this.specialDuration > 0) return false;
-        
-        // Condition 4: Not in melee attack recovery
-        if (this.atkRecovery > 0) return false;
-        
-        // Condition 5: Not in hit stun
-        if (this.stun > 0) return false;
+        let cx = this.x + 20;
+        let cy = this.y;
 
-        // Condition 6: Not currently in stealth
-        if (this.isShadowStealth) return false;
-
-        return true;
-    }
-
-    update(opponent) {
-        this.handleCounters();
-        this.handlePhysics();
-        this.handleRecharge();
-        this.processTechniqueLogic(opponent);
-        
-        if (this.isAi) this.processAi(opponent);
-    }
-
-    handleCounters() {
-        if (this.stun > 0) this.stun--;
-        if (this.atkRecovery > 0) this.atkRecovery--;
-        if (this.specialDuration > 0) this.specialDuration--;
-        
-        if (this.isShadowStealth) {
-            this.stealthTimer--;
-            if (this.stealthTimer <= 0) this.isShadowStealth = false;
-        }
-    }
-
-    handlePhysics() {
-        // Friction and Gravity
-        this.x += this.vx;
-        this.y += this.vy;
-        this.vx *= ENGINE.PHYSICS.FRICTION;
-
-        const ground = canvas.height - ENGINE.PHYSICS.GROUND_Y;
-        if (this.y < ground) {
-            this.vy += ENGINE.PHYSICS.GRAVITY;
-        } else {
-            this.y = ground;
-            this.vy = 0;
+        // Apply visual shake if stunned
+        if (this.stun > 0) {
+            ctx.translate(Math.random() * 8 - 4, 0);
         }
 
-        // Horizontal Movement
-        if (this.stun <= 0 && this.specialDuration < 80) {
-            let currentSpeed = this.stats.speed;
-            if (this.isShadowStealth) currentSpeed *= 1.6;
+        // --- MEGUMI SHADOW RENDERING ---
+        if (this.inShadow) {
+            // The shadow puddle at feet
+            ctx.fillStyle = 'rgba(0,0,0,0.85)';
+            ctx.beginPath();
+            ctx.ellipse(cx, canvas.height - 108, 48, 14, 0, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // The character transparency (Improved visibility as requested)
+            ctx.globalAlpha = 0.35; 
+        }
 
-            if (this.pId === 1) {
-                if (INPUT_BUFFER.p1L) { this.vx = -currentSpeed; this.dir = -1; }
-                if (INPUT_BUFFER.p1R) { this.vx = currentSpeed; this.dir = 1; }
-            } else if (!this.isAi) {
-                if (INPUT_BUFFER.p2L) { this.vx = -currentSpeed; this.dir = -1; }
-                if (INPUT_BUFFER.p2R) { this.vx = currentSpeed; this.dir = 1; }
+        // --- RIKA MINION RENDERING ---
+        if (this.rika.active) {
+            ctx.save();
+            ctx.fillStyle = '#666'; 
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = '#000';
+            let rx = this.rika.x;
+            let ry = this.rika.y;
+            
+            // Draw Body - Menacing grey silhouette
+            ctx.beginPath();
+            ctx.ellipse(rx, ry - 75, 30, 105, 0, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Draw Eye - The distinct white gaze
+            ctx.fillStyle = '#fff';
+            ctx.beginPath();
+            ctx.arc(rx + (this.dir * 8), ry - 125, 6, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Punch visual logic
+            if (this.rika.type === 'PUNCH') {
+                ctx.strokeStyle = '#333';
+                ctx.lineWidth = 15;
+                ctx.beginPath();
+                ctx.moveTo(rx, ry - 60);
+                ctx.lineTo(rx + (this.dir * 105), ry - 60);
+                ctx.stroke();
             }
+            ctx.restore();
         }
 
-        // Boundaries
-        if (this.x < 0) this.x = 0;
-        if (this.x > canvas.width - 40) this.x = canvas.width - 40;
-    }
-
-    handleRecharge() {
-        if (this.checkRechargeEligibility()) {
-            if (this.sp < ENGINE.STATS.MAX_SP) {
-                this.sp += (ENGINE.RECHARGE.BASE_RATE * this.stats.rechargeMod);
-            }
-        }
-    }
-
-    // --- CHARACTER TECHNIQUE MODULES ---
-    processTechniqueLogic(opp) {
-        // 1. SUKUNA: DISMANTLE PROJECTILES
-        if (this.key === 'Sukuna' && this.specialDuration > 0) {
-            // Fire a slash every 10 frames of the special duration
-            if (GAME.frame % 10 === 0) {
-                this.spawnDismantleSlash();
-            }
-        }
-        this.updateDismantleSlashes(opp);
-
-        // 2. PROJECTILE MODULE (Gojo, Choso, Jogo)
-        if (this.activeProjectile.active) {
-            this.updateProjectilePhysics(opp);
-        }
-
-        // 3. BEAM MODULE (Ryu, Yuta)
-        if (this.specialDuration > 0 && (this.stats.technique === 'GRANITE_BLAST' || this.stats.technique === 'PURE_LOVE')) {
-            this.applyBeamDamage(opp);
-        }
-    }
-
-    spawnDismantleSlash() {
-        this.flyingSlashes.push({
-            x: this.x + 20,
-            y: this.y - 80 + (Math.random() * 60),
-            vx: this.dir * 18,
-            width: 30,
-            height: 2
-        });
-    }
-
-    updateDismantleSlashes(opp) {
-        this.flyingSlashes = this.flyingSlashes.filter(slash => {
-            slash.x += slash.vx;
-
-            // Hit Detection
-            const hitX = Math.abs(slash.x - (opp.x + 20)) < 40;
-            const hitY = Math.abs(slash.y - (opp.y - 45)) < 60;
-
-            if (hitX && hitY && !opp.isShadowStealth) {
-                opp.receiveDamage(26, this);
-                return false; // Remove slash on hit
-            }
-
-            // Boundary Check
-            return slash.x > -100 && slash.x < canvas.width + 100;
-        });
-    }
-
-    updateProjectilePhysics(opp) {
-        this.activeProjectile.x += this.activeProjectile.vx;
-
-        // Sphere Collision
-        const dx = this.activeProjectile.x - (opp.x + 20);
-        const dy = this.activeProjectile.y - (opp.y - 45);
-        const distance = Math.sqrt(dx * dx + dy * dy);
-
-        if (distance < 55 && !opp.isShadowStealth) {
-            opp.receiveDamage(138, this);
-            this.activeProjectile.active = false;
-        }
-
-        // Despawn
-        if (this.activeProjectile.x < -400 || this.activeProjectile.x > canvas.width + 400) {
-            this.activeProjectile.active = false;
-        }
-    }
-
-    applyBeamDamage(opp) {
-        const dist = Math.abs(this.x - opp.x);
-        const facing = (this.dir === 1 && opp.x > this.x) || (this.dir === -1 && opp.x < this.x);
-        
-        if (dist < 900 && facing && !opp.isShadowStealth) {
-            // Beams do damage per frame, capped by stun cycles
-            opp.hp -= 0.7; 
-            opp.stun = 5; 
-        }
-    }
-
-    // --- COMBAT ACTIONS ---
-    receiveDamage(amount, source) {
-        if (this.isShadowStealth) return;
-
-        let finalDamage = Math.min(amount, ENGINE.STATS.GLOBAL_DMG_CAP);
-        this.hp -= finalDamage;
-        this.stun = ENGINE.STATS.STUN_FRAMES;
-        this.vx = source.dir * 14;
-
-        GAME.shake = Math.min(12, finalDamage / 4);
-        
-        for (let i = 0; i < 12; i++) {
-            GAME.vfxPool.push(new BloodParticle(this.x + 20, this.y - 40, source.stats.color));
-        }
-    }
-
-    performMelee(opp) {
-        if (this.stun > 0 || this.atkRecovery > 0) return;
-        this.atkRecovery = 22;
-
-        const range = 100;
-        if (Math.abs(this.x - opp.x) < range && !opp.isShadowStealth) {
-            let damage = this.stats.attackDamage;
-            if (this.isShadowStealth) {
-                damage += 40; 
-                this.isShadowStealth = false;
-            }
-            opp.receiveDamage(damage, this);
-        }
-    }
-
-    performTechnique(opp) {
-        if (this.sp < ENGINE.STATS.MAX_SP || this.stun > 0 || this.specialDuration > 0) return;
-        this.sp = 0;
-
-        switch (this.stats.technique) {
-            case 'HOLLOW_PURPLE':
-                this.activeProjectile = {
-                    active: true,
-                    x: this.x + 20,
-                    y: this.y - 50,
-                    vx: this.dir * 14,
-                    type: 'PURPLE'
-                };
-                break;
-            case 'DISMANTLE':
-                this.specialDuration = 110;
-                break;
-            case 'GRANITE_BLAST':
-            case 'PURE_LOVE':
-                this.specialDuration = 125;
-                break;
-            case 'BLACK_FLASH':
-            case 'HEAVENLY':
-            case 'HEAVENLY_RESTRICTION':
-                this.vx = this.dir * ENGINE.STATS.DASH_STRENGTH;
-                this.specialDuration = 25;
-                // Auto-trigger melee if collision occurs during dash
-                setTimeout(() => this.performMelee(opp), 50);
-                break;
-            case 'SHADOW_CHIMERA':
-                this.isShadowStealth = true;
-                this.stealthTimer = 300;
-                break;
-            case 'BLOOD_PIERCING':
-            case 'EMBER_INSECT':
-                this.activeProjectile = {
-                    active: true,
-                    x: this.x + 20,
-                    y: this.y - 50,
-                    vx: this.dir * 22,
-                    type: 'PROJ'
-                };
-                break;
-            case 'IDLE_TRANSFIG':
-                let tempX = this.x; this.x = opp.x; opp.x = tempX;
-                opp.stun = 55;
-                break;
-            case 'RATIO_TECH':
-                if (Math.abs(this.x - opp.x) < 120) {
-                    opp.receiveDamage(148, this);
-                    opp.stun = 65;
+        // --- SPECIAL FX (SUKUNA/RYU/YUTA) ---
+        if (this.fx > 0) {
+            ctx.save();
+            ctx.shadowBlur = 20;
+            ctx.shadowColor = this.s.c;
+            
+            // Sukuna's Cleave/Dismantle Visuals
+            if (this.k === 'Sukuna') {
+                ctx.strokeStyle = '#f00';
+                ctx.lineWidth = 2;
+                for (let i = 0; i < 6; i++) {
+                    ctx.beginPath();
+                    let ox = Math.random() * 190 * this.dir;
+                    ctx.moveTo(cx + ox, cy - 130);
+                    ctx.lineTo(cx + ox + 35, cy + 30);
+                    ctx.stroke();
                 }
-                break;
+            }
+
+            // Ryu/Yuta Beam Visuals
+            if (this.k === 'Ryu' || this.k === 'Yuta') {
+                ctx.fillStyle = this.s.c;
+                ctx.globalAlpha = 0.6;
+                let bY = this.y - 52;
+                
+                // Beam Clash Logic - Determine if two beams hit each other
+                let clashing = (p1.fx > 0 && p2.fx > 0 && 
+                               (p1.k === 'Ryu' || p1.k === 'Yuta') && 
+                               (p2.k === 'Ryu' || p2.k === 'Yuta') && 
+                               Math.abs(p1.y - p2.y) < 55);
+                               
+                let bLen = clashing ? Math.abs(canvas.width / 2 - cx) : 2500;
+                ctx.fillRect(cx, bY, bLen * this.dir, 38);
+                
+                // Draw collision orb if clashing
+                if (clashing) {
+                    ctx.globalAlpha = 1;
+                    ctx.fillStyle = "#fff";
+                    ctx.beginPath();
+                    ctx.arc(canvas.width / 2, bY + 19, 30 + Math.random() * 20, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+            ctx.restore();
         }
-    }
 
-    // --- ART ASSET RENDERING ---
-    draw(c) {
-        c.save();
-        const centerX = this.x + 20;
-        const centerY = this.y - 50;
+        // --- SUMMONS DRAWING (GETO) ---
+        this.getoProjs.forEach(p => {
+            ctx.fillStyle = '#f00';
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = '#000';
+            ctx.fillRect(p.x - 22, p.y - 12, 44, 24);
+        });
 
-        // Shadow rendering
-        if (this.isShadowStealth) {
-            c.globalAlpha = 0.3;
-            c.fillStyle = '#000';
-            c.beginPath();
-            c.ellipse(centerX, this.y, 45, 10, 0, 0, Math.PI * 2);
-            c.fill();
+        // --- UNIVERSAL PROJECTILES ---
+        if (this.proj.active) {
+            ctx.save();
+            ctx.fillStyle = (this.k === 'Gojo') ? '#a0f' : this.s.c;
+            ctx.shadowBlur = 25;
+            ctx.shadowColor = ctx.fillStyle;
+            
+            if (this.proj.type === 'NAIL') {
+                ctx.fillRect(this.proj.x, this.proj.y - 40, 26 * this.dir, 7);
+            } else {
+                ctx.beginPath();
+                let sz = (this.proj.type === 'PURPLE') ? 55 : 22;
+                ctx.arc(this.proj.x, this.proj.y - 40, sz, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            ctx.restore();
         }
 
-        // Stickman Physics Visuals
-        c.lineWidth = ENGINE.RENDER.LINE_W;
-        c.strokeStyle = this.stats.color;
-        if (this.stun > 0) c.translate((Math.random() - 0.5) * 5, 0);
-
-        const legAnim = (Math.abs(this.vx) > 0.6) ? Math.sin(GAME.frame * 0.3) * 25 : 0;
+        // --- CHARACTER RENDERING (STICK FIGURE CORE) ---
+        ctx.strokeStyle = (this.jackpot > 0) ? '#0f0' : this.s.c;
+        ctx.lineWidth = 4;
+        
+        // Status effect colors
+        if (this.poison > 0) ctx.strokeStyle = '#a0f';
+        if (this.silence > 0) ctx.strokeStyle = '#444';
 
         // Head
-        c.beginPath(); 
-        c.arc(centerX, centerY - 45, ENGINE.RENDER.HEAD_RAD, 0, Math.PI * 2); 
-        c.stroke();
+        ctx.beginPath(); 
+        ctx.arc(cx, cy - 85, 15, 0, Math.PI * 2); 
+        ctx.stroke(); 
+        // Torso
+        ctx.beginPath(); 
+        ctx.moveTo(cx, cy - 70); 
+        ctx.lineTo(cx, cy - 30); 
+        ctx.stroke(); 
+        // Arms logic
+        let armY = (this.m1T > 0 || this.fx > 0) ? cy - 40 : cy - 60;
+        ctx.beginPath(); 
+        ctx.moveTo(cx, cy - 65); 
+        ctx.lineTo(cx + (this.dir * 32), armY); 
+        ctx.stroke();
+        ctx.beginPath(); 
+        ctx.moveTo(cx, cy - 65); 
+        ctx.lineTo(cx - (this.dir * 22), cy - 50); 
+        ctx.stroke();
+        // Legs logic (Walk animation)
+        let legW = (Math.abs(this.vx) > 0.2) ? Math.sin(this.frame * 0.25) * 18 : 10;
+        ctx.beginPath(); 
+        ctx.moveTo(cx, cy - 30); 
+        ctx.lineTo(cx + legW, cy); 
+        ctx.stroke(); 
+        ctx.beginPath(); 
+        ctx.moveTo(cx, cy - 30); 
+        ctx.lineTo(cx - legW, cy); 
+        ctx.stroke();
         
-        // Spine
-        c.beginPath(); 
-        c.moveTo(centerX, centerY - 34); 
-        c.lineTo(centerX, centerY + 12); 
-        c.stroke();
-        
-        // Arm
-        let armReach = (this.atkRecovery > 0) ? 42 : 22;
-        c.beginPath(); 
-        c.moveTo(centerX, centerY - 25); 
-        c.lineTo(centerX + (this.dir * armReach), centerY - 5); 
-        c.stroke();
-        
-        // Legs
-        c.beginPath(); 
-        c.moveTo(centerX, centerY + 12); 
-        c.lineTo(centerX + legAnim, centerY + 50); 
-        c.stroke();
-        c.beginPath(); 
-        c.moveTo(centerX, centerY + 12); 
-        c.lineTo(centerX - legAnim, centerY + 50); 
-        c.stroke();
-
-        // Technique Visuals
-        this.renderTechniqueAssets(c, centerX, centerY);
-        
-        c.restore();
+        ctx.restore();
     }
 
-    renderTechniqueAssets(c, cx, cy) {
-        // Dismantle Visuals
-        if (this.key === 'Sukuna') {
-            c.strokeStyle = '#ff0000';
-            c.lineWidth = 2;
-            this.flyingSlashes.forEach(s => {
-                c.beginPath();
-                c.moveTo(s.x, s.y - 15);
-                c.lineTo(s.x + (this.dir * 30), s.y + 15);
-                c.stroke();
-            });
-        }
-
-        // Hollow Purple Visuals
-        if (this.key === 'Gojo' && this.activeProjectile.active) {
-            c.fillStyle = '#aa00ff';
-            c.shadowBlur = 35;
-            c.shadowColor = '#aa00ff';
-            c.beginPath();
-            c.arc(this.activeProjectile.x, this.activeProjectile.y, 35, 0, Math.PI * 2);
-            c.fill();
-        }
-
-        // Beam Visuals
-        if (this.specialDuration > 0 && (this.stats.technique === 'GRANITE_BLAST' || this.stats.technique === 'PURE_LOVE')) {
-            let grad = c.createLinearGradient(cx, cy, cx + (1200 * this.dir), cy);
-            grad.addColorStop(0, this.stats.color);
-            grad.addColorStop(1, 'rgba(0,0,0,0)');
-            c.fillStyle = grad;
-            c.globalAlpha = 0.45;
-            c.fillRect(cx, cy - 25, 1200 * this.dir, 50);
+    spec(opp) {
+        if (this.spT > 0 || this.stun > 0 || this.silence > 0) return;
+        
+        // Cooldown starts IMMEDIATELY upon execution
+        this.spT = 450; 
+        
+        switch(this.k) {
+            case 'Nobara': 
+                this.proj = { active: true, x: this.x, y: this.y, vx: this.dir * 26, type: 'NAIL' }; 
+                break;
+            case 'Hakari': 
+                // Jackpot check: 33% chance
+                if (Math.random() < 0.33) {
+                    this.jackpot = 650;
+                }
+                this.spT = 420; 
+                break;
+            case 'Gojo': 
+                this.proj = { active: true, x: this.x, y: this.y, vx: this.dir * 9, type: 'PURPLE' }; 
+                this.spT = 650; 
+                break;
+            case 'Sukuna': 
+                this.fx = 55; this.spT = 480; 
+                break;
+            case 'Itadori': 
+                this.vx = this.dir * 45; this.fx = 28; this.spT = 520; 
+                break;
+            case 'Todo': 
+                let tX = this.x; this.x = opp.x; opp.x = tX; 
+                opp.stun = 50; this.spT = 550; 
+                break;
+            case 'Choso': 
+                this.proj = { active: true, x: this.x, y: this.y, vx: this.dir * 32, type: 'BLOOD' }; 
+                this.spT = 450; 
+                break;
+            case 'Nanami': 
+                this.vx = this.dir * 38; this.fx = 22; this.spT = 500; 
+                break;
+            case 'Megumi': 
+                this.inShadow = true; 
+                this.shadowTimer = 180; // Hard cap of 3 seconds
+                this.spT = 650; 
+                break;
+            case 'Naoya': 
+                this.vx = this.dir * 65; this.fx = 42; this.spT = 550; 
+                break;
+            case 'Geto': 
+                this.getoProjs = [
+                    {x:this.x, y:this.y-95, vx:this.dir*9.5},
+                    {x:this.x, y:this.y-50, vx:this.dir*9.5},
+                    {x:this.x, y:this.y, vx:this.dir*9.5}
+                ]; 
+                this.spT = 580; 
+                break;
+            case 'Ryu': 
+                this.fx = 140; 
+                this.spT = (opp.k === 'Yuta') ? 480 : 950; 
+                break;
+            case 'Yuta': 
+                this.spT = 650; 
+                if (opp.k === 'Ryu') {
+                    this.fx = 140; 
+                    this.rika = { active: true, x: this.x - (this.dir * 75), y: this.y, frame: 140, type: 'BEAM' };
+                } else {
+                    this.rika = { active: true, x: this.x + (this.dir * 50), y: this.y, frame: 65, type: 'PUNCH' };
+                }
+                break;
+            case 'Toji': 
+            case 'Maki': 
+                this.vx = this.dir * 55; this.fx = 32; this.spT = 450; 
+                break;
         }
     }
 
-    processAi(opp) {
-        let dist = Math.abs(this.x - opp.x);
+    update(opp) {
+        if (!active || paused) return;
+
+        // Process Poison / Bleed
+        if (this.poison > 0) { 
+            this.poison--; 
+            if (this.poison % 60 === 0) this.hp -= 4.5; 
+        }
+
+        // Megumi 3-Second Rule Enforcement
+        if (this.inShadow) {
+            this.shadowTimer--;
+            if (this.shadowTimer <= 0) {
+                this.inShadow = false;
+            }
+        }
+
+        // Process Rika Minion
+        if (this.rika.active) {
+            this.rika.frame--;
+            if (this.rika.type === 'PUNCH' && !opp.inShadow) {
+                let punchRange = Math.abs(this.rika.x - opp.x);
+                if (punchRange < 100) { 
+                    opp.hp -= 52; opp.stun = 120; opp.vx = this.dir * 32; 
+                }
+            } else { 
+                this.rika.x = this.x - (this.dir * 75); 
+                this.rika.y = this.y; 
+            }
+            if (this.rika.frame <= 0) this.rika.active = false;
+        }
+
+        // Geto Projectile Logic
+        this.getoProjs = this.getoProjs.filter(p => {
+            p.x += p.vx;
+            let hitTarget = Math.abs(p.x - (opp.x + 20)) < 48 && Math.abs(p.y - (opp.y - 45)) < 80;
+            if (hitTarget && !opp.inShadow) {
+                opp.hp -= 32; opp.stun = 28; return false;
+            }
+            return p.x > -200 && p.x < canvas.width + 200;
+        });
+
+        // Effect & Beam Damage Logic
+        let isBeaming = (this.fx > 0 && (this.k === 'Ryu' || this.k === 'Yuta'));
+        if (this.fx > 0) {
+            this.fx--;
+            if (!opp.inShadow) {
+                let d = Math.abs(this.x - opp.x);
+                if (this.k === 'Sukuna' && d < 210) { opp.hp -= 3.5; opp.stun = 5; }
+                if (this.k === 'Itadori' && d < 85) { opp.hp -= 85; opp.stun = 55; this.fx = 0; }
+                if (this.k === 'Naoya' && d < 95) { opp.stun = 110; this.fx = 0; }
+                if (this.k === 'Nanami' && d < 90) { opp.hp -= 65; opp.silence = 250; this.fx = 0; }
+                if ((this.k === 'Toji' || this.k === 'Maki') && d < 115) { 
+                    opp.hp -= 8; opp.stun = 18; opp.vx = this.dir * 32; 
+                }
+                
+                // Beam specific collision
+                if (isBeaming) {
+                    let vMatch = Math.abs((this.y - 35) - (opp.y - 45)) < 70;
+                    let frontal = (this.dir === 1) ? (opp.x > this.x) : (opp.x < this.x);
+                    let inRange = (opp.x + 20) > Math.min(this.x, this.x + (this.dir * 2500)) && (opp.x + 20) < Math.max(this.x, this.x + (this.dir * 2500));
+                    let clash = (p1.fx > 0 && p2.fx > 0 && 
+                                (p1.k === 'Ryu' || p1.k === 'Yuta') && 
+                                (p2.k === 'Ryu' || p2.k === 'Yuta') && 
+                                Math.abs(p1.y - p2.y) < 60);
+                    if (vMatch && frontal && inRange && !clash) { opp.hp -= 1.75; opp.stun = 5; }
+                }
+            }
+        }
+
+        // Universal Projectile Collision
+        if (this.proj.active) {
+            this.proj.x += this.proj.vx;
+            let pDistX = Math.abs(this.proj.x - (opp.x + 20));
+            let pDistY = Math.abs(this.proj.y - 40 - (opp.y - 45));
+            if (pDistX < 75 && pDistY < 115 && !opp.inShadow) {
+                if (this.proj.type === 'NAIL') { opp.hp -= 42; opp.stun = 145; }
+                else if (this.proj.type === 'PURPLE') { opp.hp -= 100; opp.stun = 90; }
+                else if (this.proj.type === 'BLOOD') { opp.hp -= 38; opp.poison = 260; }
+                this.proj.active = false;
+            }
+            if (this.proj.x < -600 || this.proj.x > canvas.width + 600) this.proj.active = false;
+        }
+
+        // Physical Engine
+        if (isBeaming) {
+            this.vx = 0; this.vy = 0;
+        } else if (this.stun <= 0) {
+            let speedMod = this.inShadow ? 1.75 : 1.0;
+            let moveSpd = this.s.s * speedMod;
+            
+            if (this.pNum === 1) {
+                if (held.p1L) { this.vx = -moveSpd; this.dir = -1; }
+                if (held.p1R) { this.vx = moveSpd; this.dir = 1; }
+            } else if (!this.cpu) {
+                if (held.p2L) { this.vx = -moveSpd; this.dir = -1; }
+                if (held.p2R) { this.vx = moveSpd; this.dir = 1; }
+            }
+        }
+
+        // Apply velocities
+        this.x += this.vx; this.y += this.vy;
+        this.vx *= 0.83; // Friction
+        
+        // Wall Constraints
+        if (this.x < 0) this.x = 0;
+        if (this.x > canvas.width - 50) this.x = canvas.width - 50;
+
+        // Floor Logic & Gravity
+        let ground = canvas.height - 110;
+        if (!isBeaming) {
+            if (this.y < ground) {
+                this.vy += 0.95;
+            } else { 
+                this.y = ground; 
+                this.vy = 0; 
+            }
+        }
+
+        // Timer Decrements
+        if (this.jackpot > 0) {
+            this.jackpot--;
+            if (this.hp < 300) this.hp += 0.8; 
+        }
+        if (this.stun > 0) this.stun--;
+        if (this.spT > 0) this.spT--;
+        if (this.m1T > 0) this.m1T--;
+        if (this.silence > 0) this.silence--;
+
+        // AI Tick Logic
+        if (this.cpu) this.ai(opp);
+    }
+
+    atk(opp) {
+        if (this.stun > 0 || this.m1T > 0 || this.silence > 0 || (this.fx > 0 && (this.k === 'Ryu' || this.k === 'Yuta'))) return;
+        this.m1T = 20;
+        let distH = Math.abs(this.x - opp.x);
+        let distV = Math.abs(this.y - opp.y);
+        
+        if (distH < 100 && distV < 120 && !opp.inShadow) {
+            if (this.inShadow) { 
+                opp.hp -= (this.s.d + 30); opp.stun = 80; this.inShadow = false; 
+            } else { 
+                opp.hp -= this.s.d; opp.stun = 18; 
+            }
+            opp.vx = this.dir * 9;
+        } else if (this.inShadow) {
+            this.inShadow = false;
+        }
+    }
+
+    ai(opp) {
+        if (this.stun > 0 || (this.fx > 0 && (this.k === 'Ryu' || this.k === 'Yuta'))) return;
+        
+        let d = Math.abs(this.x - opp.x);
+        // Correct facing direction
         this.dir = (opp.x < this.x) ? -1 : 1;
 
-        if (dist > 130) {
-            this.vx = (opp.x < this.x ? -this.stats.speed : this.stats.speed) * 0.72;
-        } else {
-            if (Math.random() < 0.05) this.performMelee(opp);
+        // Tracking logic
+        if (d > 165) {
+            this.vx = (opp.x < this.x) ? -this.s.s : this.s.s;
+        } else if (d < 50) {
+            this.vx = (opp.x < this.x) ? this.s.s : -this.s.s;
         }
 
-        if (this.sp >= ENGINE.STATS.MAX_SP && Math.random() < 0.02) {
-            this.performTechnique(opp);
+        // Intelligent Jumping (Evasion)
+        if (this.y >= canvas.height - 110) {
+            let needsJump = (opp.y < this.y - 80) || (opp.proj.active && Math.abs(opp.proj.x - this.x) < 260);
+            if (needsJump && Math.random() < 0.25) {
+                this.vy = -20;
+            }
+        }
+
+        // Combat triggers
+        if (d < 118 && Math.random() < 0.13) {
+            this.atk(opp);
+        }
+        
+        // Special Ability triggers
+        if (this.spT === 0 && Math.random() < 0.03) {
+            this.spec(opp);
         }
     }
 }
 
-// --- SECTION 6: GAME FLOW CONTROLLERS ---
-
-function startSelectedMode(mode) {
-    GAME.mode = mode;
-    GAME.selectionPhase = 1;
-    document.getElementById('m-start').classList.remove('active-menu');
-    document.getElementById('m-char').classList.add('active-menu');
-    refreshCharGrid();
-}
-
-function refreshCharGrid() {
-    const grid = document.getElementById('char-grid');
-    document.getElementById('selection-title').innerText = `PLAYER ${GAME.selectionPhase} SELECT`;
+// PC KEYBOARD INPUT LISTENERS
+window.addEventListener('keydown', e => {
+    if (!active || paused) return;
     
-    grid.innerHTML = '';
-    Object.keys(DATA).forEach(name => {
-        const btn = document.createElement('button');
-        btn.className = 'char-btn';
-        btn.innerHTML = `<strong>${name.toUpperCase()}</strong>`;
-        
-        btn.onpointerdown = (e) => {
-            e.stopPropagation();
-            if (GAME.selectionPhase === 1) {
-                GAME.p1Selection = name;
-                if (GAME.mode === '1P') {
-                    const keys = Object.keys(DATA);
-                    GAME.p2Selection = keys[Math.floor(Math.random() * keys.length)];
-                    finalizeAndLaunch();
-                } else {
-                    GAME.selectionPhase = 2;
-                    refreshCharGrid();
-                }
-            } else {
-                GAME.p2Selection = name;
-                finalizeAndLaunch();
+    // Player 1: WASD / F (Atk) / G (Spec)
+    if (e.code === 'KeyA') held.p1L = true;
+    if (e.code === 'KeyD') held.p1R = true;
+    if (e.code === 'KeyW' && p1.vy === 0) p1.vy = -20;
+    if (e.code === 'KeyF') p1.atk(p2);
+    if (e.code === 'KeyG') p1.spec(p2);
+
+    // Player 2: Arrows / K (Atk) / L (Spec)
+    if (e.code === 'ArrowLeft') held.p2L = true;
+    if (e.code === 'ArrowRight') held.p2R = true;
+    if (e.code === 'ArrowUp' && p2.vy === 0) p2.vy = -20;
+    if (e.code === 'KeyK') p2.atk(p1);
+    if (e.code === 'KeyL') p2.spec(p1);
+    
+    if (e.code === 'Escape') togglePause();
+});
+
+window.addEventListener('keyup', e => {
+    if (e.code === 'KeyA') held.p1L = false;
+    if (e.code === 'KeyD') held.p1R = false;
+    if (e.code === 'ArrowLeft') held.p2L = false;
+    if (e.code === 'ArrowRight') held.p2R = false;
+});
+
+// Menu Navigation System
+function initMode(m) {
+    mode = m; p1C = null; p2C = null;
+    document.getElementById('m-start').style.display = 'none';
+    document.getElementById('m-char').style.display = 'block';
+    updateDisplayTitle();
+    
+    const container = document.getElementById('char-grid');
+    container.innerHTML = '';
+    
+    Object.keys(chars).forEach(name => {
+        const charBtn = document.createElement('button');
+        charBtn.innerText = name;
+        charBtn.onpointerdown = (ev) => {
+            ev.stopPropagation();
+            if (!p1C) { 
+                p1C = name; 
+                if (mode === '1P') { 
+                    const list = Object.keys(chars);
+                    p2C = list[Math.floor(Math.random() * list.length)]; 
+                    beginGameSession(); 
+                } else updateDisplayTitle(); 
+            } else if (mode === '2P' && !p2C) { 
+                p2C = name; 
+                beginGameSession(); 
             }
         };
-        grid.appendChild(btn);
+        container.appendChild(charBtn);
     });
 }
 
-function finalizeAndLaunch() {
+function updateDisplayTitle() {
+    const title = document.getElementById('selection-title');
+    if (!p1C) { 
+        title.innerText = "PLAYER 1: SELECT YOUR SORCERER"; 
+        title.style.color = "#0af"; 
+    } else { 
+        title.innerText = "PLAYER 2: SELECT YOUR SORCERER"; 
+        title.style.color = "#f33"; 
+    }
+}
+
+function beginGameSession() {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
     
-    GAME.p1 = new Sorcerer(canvas.width * 0.2, canvas.height - 200, GAME.p1Selection, 1, false);
-    GAME.p2 = new Sorcerer(canvas.width * 0.7, canvas.height - 200, GAME.p2Selection, 2, (GAME.mode === '1P'));
+    p1 = new Sorcerer(150, canvas.height - 110, p1C, 1, false);
+    p2 = new Sorcerer(canvas.width - 250, canvas.height - 110, p2C, 2, (mode === '1P'));
     
-    // UI Cleanup
-    document.getElementById('m-char').classList.remove('active-menu');
-    document.getElementById('controls').style.display = 'block';
+    document.getElementById('menu').classList.remove('active-menu');
     document.getElementById('pause-btn').style.display = 'block';
-    if (GAME.mode === '2P') document.getElementById('p2-pad').style.display = 'grid';
+    document.getElementById('controls').style.display = 'block';
     
-    GAME.isRunning = true;
-    requestAnimationFrame(gameLoop);
+    if (mode === '2P') {
+        document.getElementById('p2-pad').style.display = 'block';
+    }
+    
+    active = true;
+    requestAnimationFrame(mainLoop);
 }
 
-function gameLoop() {
-    if (!GAME.isRunning || GAME.isPaused) return;
+function mainLoop() {
+    if (!active) return;
+    
+    if (!paused) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        // Logical Update
+        p1.update(p2);
+        p2.update(p1);
+        
+        // Graphical Draw
+        p1.draw();
+        p2.draw();
+        
+        // Interface Synchronization
+        syncInterface();
 
-    GAME.frame++;
-    ctx.save();
-
-    // Shake logic
-    if (GAME.shake > 0.1) {
-        ctx.translate((Math.random() - 0.5) * GAME.shake, (Math.random() - 0.5) * GAME.shake);
-        GAME.shake *= 0.92;
+        if (p1.hp <= 0 || p2.hp <= 0) {
+            active = false;
+            triggerEndScreen(p1.hp <= 0 ? "PLAYER 2" : "PLAYER 1");
+        }
     }
+    requestAnimationFrame(mainLoop);
+}
 
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+function syncInterface() {
+    document.getElementById('p1-hp').style.width = (p1.hp / 3) + '%';
+    document.getElementById('p1-cd').style.width = ((450 - p1.spT) / 4.5) + '%';
+    document.getElementById('p1-stun').innerText = p1.stun > 0 ? "STUNNED" : (p1.silence > 0 ? "SILENCED" : "");
+    
+    document.getElementById('p2-hp').style.width = (p2.hp / 3) + '%';
+    document.getElementById('p2-cd').style.width = ((450 - p2.spT) / 4.5) + '%';
+    document.getElementById('p2-stun').innerText = p2.stun > 0 ? "STUNNED" : (p2.silence > 0 ? "SILENCED" : "");
+}
 
-    // VFX Processing
-    GAME.vfxPool = GAME.vfxPool.filter(p => {
-        p.update();
-        p.draw(ctx);
-        return p.alpha > 0;
+function triggerEndScreen(winner) {
+    const endBox = document.getElementById('win-screen');
+    const endText = document.getElementById('win-text');
+    endText.innerText = winner + " WINS"; 
+    endText.style.color = (winner === "PLAYER 1") ? "#0af" : "#f33";
+    endBox.classList.add('active-menu');
+}
+
+function togglePause() {
+    if (!active) return;
+    paused = !paused;
+    const overlay = document.getElementById('pause-screen');
+    if (paused) {
+        overlay.classList.add('active-menu');
+    } else {
+        overlay.classList.remove('active-menu');
+    }
+}
+
+// Touch Event Infrastructure
+window.addEventListener('touchstart', event => {
+    if (event.target.tagName !== 'BUTTON') event.preventDefault();
+    [...event.touches].forEach(t => {
+        const el = document.elementFromPoint(t.clientX, t.clientY);
+        if (!el || !el.dataset.v) return;
+        
+        const owner = el.dataset.p;
+        const self = (owner === '1') ? p1 : p2;
+        const enemy = (owner === '1') ? p2 : p1;
+        const beamLock = (self.fx > 0 && (self.k === 'Ryu' || self.k === 'Yuta'));
+        
+        if (el.dataset.v === 'l') held['p' + owner + 'L'] = true;
+        if (el.dataset.v === 'r') held['p' + owner + 'R'] = true;
+        if (el.dataset.v === 'u' && self.vy === 0 && !beamLock) self.vy = -20;
+        if (el.dataset.v === 'a') self.atk(enemy);
+        if (el.dataset.v === 's') self.spec(enemy);
     });
+}, { passive: false });
 
-    // Actor Processing
-    GAME.p1.update(GAME.p2);
-    GAME.p2.update(GAME.p1);
-
-    GAME.p1.draw(ctx);
-    GAME.p2.draw(ctx);
-
-    // HUD Linking
-    document.getElementById('p1-hp').style.width = (GAME.p1.hp / 3) + '%';
-    document.getElementById('p1-cd').style.width = (GAME.p1.sp / 6) + '%';
-    document.getElementById('p2-hp').style.width = (GAME.p2.hp / 3) + '%';
-    document.getElementById('p2-cd').style.width = (GAME.p2.sp / 6) + '%';
-
-    // Win Check
-    if (GAME.p1.hp <= 0 || GAME.p2.hp <= 0) {
-        GAME.isRunning = false;
-        document.getElementById('win-screen').classList.add('active-menu');
-        document.getElementById('win-text').innerText = (GAME.p1.hp <= 0) ? "P2 WINS" : "P1 WINS";
-    }
-
-    ctx.restore();
-    requestAnimationFrame(gameLoop);
-}
-
-// --- SECTION 7: INPUT INTERFACE ---
-
-window.addEventListener('pointerdown', (e) => {
-    const val = e.target.dataset.v;
-    const pid = e.target.dataset.p;
-    if (!val || !pid) return;
-
-    const actor = (pid === '1') ? GAME.p1 : GAME.p2;
-    const enemy = (pid === '1') ? GAME.p2 : GAME.p1;
-
-    if (val === 'l') INPUT_BUFFER[`p${pid}L`] = true;
-    if (val === 'r') INPUT_BUFFER[`p${pid}R`] = true;
-    if (val === 'u' && actor.vy === 0) actor.vy = ENGINE.PHYSICS.JUMP_POWER;
-    if (val === 'a') actor.performMelee(enemy);
-    if (val === 's') actor.performTechnique(enemy);
+window.addEventListener('touchend', event => {
+    // Reset inputs, then recalculate from remaining touches
+    held.p1L = held.p1R = held.p2L = held.p2R = false;
+    [...event.touches].forEach(t => {
+        const el = document.elementFromPoint(t.clientX, t.clientY);
+        if (el && el.dataset.v === 'l') held['p' + el.dataset.p + 'L'] = true;
+        if (el && el.dataset.v === 'r') held['p' + el.dataset.p + 'R'] = true;
+    });
 });
 
-window.addEventListener('pointerup', (e) => {
-    const val = e.target.dataset.v;
-    const pid = e.target.dataset.p;
-    if (val === 'l') INPUT_BUFFER[`p${pid}L`] = false;
-    if (val === 'r') INPUT_BUFFER[`p${pid}R`] = false;
-});
-
-function handlePauseToggle() {
-    GAME.isPaused = !GAME.isPaused;
-    document.getElementById('m-pause').classList.toggle('active-menu', GAME.isPaused);
-    if (!GAME.isPaused) requestAnimationFrame(gameLoop);
-}
-
-function handleRestart() {
-    window.location.reload();
-}
-
-// Entry Point
-window.onload = () => {
-    document.getElementById('m-start').classList.add('active-menu');
+window.onresize = () => {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
 };
-
-/** * LOG: RECHARGE LOGIC VERIFIED.
- * SP DOES NOT REFILL WHILE Projectile.active OR SpecialDuration > 0.
- * LINE COUNT: > 700.
- */
