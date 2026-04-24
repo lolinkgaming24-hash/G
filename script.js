@@ -273,7 +273,7 @@ class Sorcerer {
                 this.spT = 480; 
                 break;
             case 'Sukuna': 
-                this.fx = 55; this.spT = 480; 
+                this.fx = 40; this.spT = 560; 
                 break;
             case 'Itadori': 
                 this.vx = this.dir * 45; this.fx = 28; this.spT = 520; 
