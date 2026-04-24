@@ -459,22 +459,33 @@ class Sorcerer {
     }
 
     atk(opp) {
-        if (this.stun > 0 || this.m1T > 0 || this.silence > 0 || (this.fx > 0 && (this.k === 'Ryu' || this.k === 'Yuta'))) return;
-        this.m1T = 20;
-        let distH = Math.abs(this.x - opp.x);
-        let distV = Math.abs(this.y - opp.y);
-        
-        if (distH < 100 && distV < 120 && !opp.inShadow) {
-            if (this.inShadow) { 
-                opp.hp -= (this.s.d + 30); opp.stun = 80; this.inShadow = false; 
-            } else { 
-                opp.hp -= this.s.d; opp.stun = 18; 
-            }
-            opp.vx = this.dir * 9;
-        } else if (this.inShadow) {
-            this.inShadow = false;
+    if (this.stun > 0 || this.m1T > 0 || this.silence > 0 || (this.fx > 0 && (this.k === 'Ryu' || this.k === 'Yuta'))) return;
+    this.m1T = 20;
+    let distH = Math.abs(this.x - opp.x);
+    let distV = Math.abs(this.y - opp.y);
+    
+    if (distH < 100 && distV < 120 && !opp.inShadow) {
+        let finalDamage = this.s.d;
+
+        // --- HAKARI JACKPOT BUFF ---
+        if (this.k === 'Hakari' && this.jackpot > 0) {
+            finalDamage += 15; // Adds 15 extra damage per hit during Jackpot
         }
+
+        // Megumi Shadow logic (keeping your existing feature)
+        if (this.inShadow) { 
+            opp.hp -= (finalDamage + 30); 
+            opp.stun = 80; 
+            this.inShadow = false; 
+        } else { 
+            opp.hp -= finalDamage; 
+            opp.stun = 18; 
+        }
+        opp.vx = this.dir * 9;
+    } else if (this.inShadow) {
+        this.inShadow = false;
     }
+}
 
     ai(opp) {
         if (this.stun > 0 || (this.fx > 0 && (this.k === 'Ryu' || this.k === 'Yuta'))) return;
