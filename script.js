@@ -373,7 +373,7 @@ class Sorcerer {
             this.fx--;
             if (!opp.inShadow) {
                 let d = Math.abs(this.x - opp.x);
-                if (this.k === 'Sukuna' && d < 280) { opp.hp -= 1.5; opp.stun = 5; }
+                if (this.k === 'Sukuna' && d < 280) { opp.hp -= 2; opp.stun = 5; }
                 if (this.k === 'Itadori' && d < 85) { opp.hp -= 85; opp.stun = 55; this.fx = 0; }
                 if (this.k === 'Naoya' && d < 95) { opp.stun = 110; this.fx = 0; }
                 if (this.k === 'Nanami' && d < 90) { opp.hp -= 65; opp.silence = 250; this.fx = 0; }
